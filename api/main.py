@@ -443,10 +443,8 @@ def sales_status():
 
 @app.get("/api/taps")
 def get_taps(wos: float = WOS_DEFAULT, days: int = DAYS_DEFAULT, refresh_inventory: bool = False):
-    if refresh_inventory or not cache.get("inventory"):
-        pull_inventory()
+    pull_inventory()
     if not cache.get("sales"):
-        # No sales cached, try to pull
         pull_sales(days)
     result = run_taps(wos, days)
     return result
