@@ -69,3 +69,4 @@ Open http://localhost:5173
 4. Click **↻ Sales** to refresh sales data (runs in background)
 5. Filter, sort, generate POs
 6. All tabs: Command Center, Revenue, Par Levels, Stockouts, Overstock, Dead Weight, Store View, POs
+# force rebuild
