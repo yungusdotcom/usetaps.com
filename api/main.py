@@ -61,9 +61,11 @@ cache = {
 
 # ─── FLOWHUB API HELPERS ─────────────────────────────────────────────────────
 def fh_headers():
-    if not FLOWHUB_CLIENT_ID or not FLOWHUB_API_KEY:
+    cid = os.environ.get("FLOWHUB_CLIENT_ID", "")
+    key = os.environ.get("FLOWHUB_API_KEY", "")
+    if not cid or not key:
         raise HTTPException(500, "Flowhub credentials not configured")
-    return {"clientId": FLOWHUB_CLIENT_ID, "key": FLOWHUB_API_KEY}
+    return {"clientId": cid, "key": key}
 
 def fh_get(path, params=None, timeout=90):
     url = f"{FLOWHUB_BASE}{path}"
@@ -454,9 +456,4 @@ def get_taps_cached():
 @app.on_event("startup")
 async def startup():
     log.info("TAPS API starting...")
-    try:
-        get_locations()
-        pull_inventory()
-        log.info("Initial inventory loaded. Sales will be pulled on first request or via /api/refresh-sales")
-    except Exception as e:
-        log.error(f"Startup error: {e}")
+    log.info("Ready. Inventory and sales will load on first request.")
