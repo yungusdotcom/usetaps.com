@@ -400,6 +400,10 @@ def run_taps(wos_target=WOS_DEFAULT, days=DAYS_DEFAULT):
 def root():
     return {"status": "ok", "app": "TAPS", "version": "1.0"}
 
+@app.get("/api/debug-env")
+def debug_env():
+    return {"has_cid": bool(os.environ.get("FLOWHUB_CLIENT_ID")), "has_key": bool(os.environ.get("FLOWHUB_API_KEY")), "env_keys": [k for k in os.environ.keys() if "FLOW" in k.upper()]}
+
 @app.get("/api/status")
 def status():
     return {
