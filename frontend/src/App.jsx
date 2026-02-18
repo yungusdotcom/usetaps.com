@@ -151,9 +151,9 @@ export default function TAPSApp() {
     });
   };
 
-  const stores = ["All", ...new Set(products.map((p) => p.s))].sort();
-  const cats = ["All", ...new Set(products.map((p) => p.cat).filter(Boolean))].sort();
-  const brands = ["All", ...new Set(products.map((p) => p.b).filter(Boolean))].sort();
+  const stores = ["All", ...[...new Set(products.map((p) => p.s))].sort()];
+  const cats = ["All", ...[...new Set(products.map((p) => p.cat).filter(Boolean))].sort()];
+  const brands = ["All", ...[...new Set(products.map((p) => p.b).filter(Boolean))].sort()];
 
   // ── COMPONENTS ──
   const KPI = ({ label, value, sub, color }) => (
