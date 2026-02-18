@@ -1,6 +1,6 @@
 """
-TAPS API v2 — Backend Server
-Parallel sales pull + incremental updates.
+TAPS API v2.1 — Redis-backed persistent cache
+Sales data survives container restarts.
 """
 
 import os
@@ -8,10 +8,10 @@ import json
 import time
 import logging
 from datetime import datetime, timedelta
-from typing import Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
+import redis
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -28,9 +28,45 @@ EXCLUDE_STORES = ['MBNV', 'Smoke & Mirrors', 'Cultivation']
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("taps")
 
-app = FastAPI(title="TAPS API", version="2.0")
+app = FastAPI(title="TAPS API", version="2.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+# ─── REDIS ────────────────────────────────────────────────────────────────────
+REDIS_URL = os.environ.get("REDIS_URL", "")
+rdb = None
+
+def get_redis():
+    global rdb
+    if rdb: return rdb
+    if not REDIS_URL:
+        log.warning("No REDIS_URL — running without persistence")
+        return None
+    try:
+        rdb = redis.from_url(REDIS_URL, decode_responses=True)
+        rdb.ping()
+        log.info("Redis connected ✓")
+        return rdb
+    except Exception as e:
+        log.error(f"Redis failed: {e}")
+        return None
+
+def redis_set(key, data, ttl=86400*7):
+    r = get_redis()
+    if r:
+        try:
+            r.setex(key, ttl, json.dumps(data))
+        except: pass
+
+def redis_get(key):
+    r = get_redis()
+    if r:
+        try:
+            val = r.get(key)
+            if val: return json.loads(val)
+        except: pass
+    return None
+
+# ─── IN-MEMORY CACHE ─────────────────────────────────────────────────────────
 cache = {
     "locations": None, "loc_lookup": {},
     "inventory": None, "inventory_ts": None,
@@ -39,6 +75,7 @@ cache = {
     "taps": None, "taps_ts": None,
 }
 
+# ─── FLOWHUB API ──────────────────────────────────────────────────────────────
 def fh_headers():
     cid = os.environ.get("FLOWHUB_CLIENT_ID", "")
     key = os.environ.get("FLOWHUB_API_KEY", "")
@@ -67,6 +104,7 @@ def fh_get(path, params=None, timeout=120):
             return None
     return None
 
+# ─── LOCATIONS ────────────────────────────────────────────────────────────────
 def get_locations():
     if cache["locations"]:
         return cache["locations"]
@@ -92,6 +130,7 @@ def get_locations():
     log.info(f"Loaded {len(retail)} locations")
     return retail
 
+# ─── INVENTORY ────────────────────────────────────────────────────────────────
 def pull_inventory():
     log.info("Pulling inventory...")
     locations = get_locations()
@@ -126,6 +165,7 @@ def pull_inventory():
     log.info(f"Inventory: {len(inventory)} items, {sum(i['oh'] for i in inventory):,}u, ${sum(i['ic'] for i in inventory):,.2f}")
     return inventory
 
+# ─── SALES: SINGLE STORE ─────────────────────────────────────────────────────
 def pull_store_sales(loc, start_date, end_date):
     name = loc["_name"]
     store_clean = loc["_clean"]
@@ -161,6 +201,7 @@ def pull_store_sales(loc, start_date, end_date):
         time.sleep(RATE_LIMIT)
     return store_clean, items
 
+# ─── SALES AGGREGATION ───────────────────────────────────────────────────────
 def aggregate_sales(raw_items, days):
     weeks = days / 7
     agg = {}
@@ -188,6 +229,7 @@ def aggregate_sales(raw_items, days):
     cache["sales_store_totals"] = store_totals
     return result
 
+# ─── SALES: FULL PULL (PARALLEL) + REDIS PERSIST ─────────────────────────────
 def pull_sales_full(days=DAYS_DEFAULT):
     if cache["sales_pulling"]:
         log.info("Sales pull already in progress")
@@ -196,8 +238,8 @@ def pull_sales_full(days=DAYS_DEFAULT):
     log.info(f"FULL sales pull ({days} days, {MAX_WORKERS} workers)...")
     try:
         locations = get_locations()
-        end_date = datetime.now().strftime("%Y-%m-%d")
-        start_date = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+        end_date = datetime.utcnow().strftime("%Y-%m-%d")
+        start_date = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
         all_items = []
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
             futures = {ex.submit(pull_store_sales, loc, start_date, end_date): loc for loc in locations}
@@ -206,14 +248,23 @@ def pull_sales_full(days=DAYS_DEFAULT):
                 all_items.extend(items)
                 log.info(f"  ✓ {sc}: {len(items):,} items")
         sales_agg = aggregate_sales(all_items, days)
+        ts = datetime.utcnow().isoformat() + "Z"
         cache["sales"] = sales_agg
-        cache["sales_raw_ts"] = datetime.utcnow().isoformat() + "Z"
+        cache["sales_raw_ts"] = ts
         cache["sales_last_date"] = end_date
         log.info(f"Sales done: {len(all_items):,} raw → {len(sales_agg):,} aggregated")
+
+        # Persist to Redis
+        redis_set("taps:sales", sales_agg)
+        redis_set("taps:sales_store_totals", cache["sales_store_totals"])
+        redis_set("taps:sales_meta", {"ts": ts, "last_date": end_date, "count": len(sales_agg)})
+        log.info("Sales persisted to Redis ✓")
+
         return sales_agg
     finally:
         cache["sales_pulling"] = False
 
+# ─── SALES: INCREMENTAL ──────────────────────────────────────────────────────
 def pull_sales_incremental():
     if cache["sales_pulling"]:
         return cache.get("sales")
@@ -227,7 +278,7 @@ def pull_sales_incremental():
     log.info(f"INCREMENTAL sales (since {last_date})...")
     try:
         locations = get_locations()
-        end_date = datetime.now().strftime("%Y-%m-%d")
+        end_date = datetime.utcnow().strftime("%Y-%m-%d")
         new_items = []
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
             futures = {ex.submit(pull_store_sales, loc, last_date, end_date): loc for loc in locations}
@@ -264,13 +315,39 @@ def pull_sales_incremental():
                     st[item["s"]][k] += item[k]
             cache["sales_store_totals"] = st
             cache["sales"] = existing
+
+        ts = datetime.utcnow().isoformat() + "Z"
         cache["sales_last_date"] = end_date
-        cache["sales_raw_ts"] = datetime.utcnow().isoformat() + "Z"
+        cache["sales_raw_ts"] = ts
         log.info(f"Incremental: {len(new_items):,} new items merged")
+
+        # Persist to Redis
+        redis_set("taps:sales", cache["sales"])
+        redis_set("taps:sales_store_totals", cache["sales_store_totals"])
+        redis_set("taps:sales_meta", {"ts": ts, "last_date": end_date, "count": len(cache["sales"])})
+        log.info("Sales persisted to Redis ✓")
+
         return cache["sales"]
     finally:
         cache["sales_pulling"] = False
 
+# ─── LOAD SALES FROM REDIS ON STARTUP ─────────────────────────────────────────
+def load_sales_from_redis():
+    sales = redis_get("taps:sales")
+    if not sales:
+        log.info("No cached sales in Redis")
+        return False
+    store_totals = redis_get("taps:sales_store_totals")
+    meta = redis_get("taps:sales_meta")
+    cache["sales"] = sales
+    cache["sales_store_totals"] = store_totals or {}
+    if meta:
+        cache["sales_raw_ts"] = meta.get("ts")
+        cache["sales_last_date"] = meta.get("last_date")
+    log.info(f"Loaded sales from Redis: {len(sales):,} items (pulled {meta.get('ts', '?')})")
+    return True
+
+# ─── TAPS ENGINE ──────────────────────────────────────────────────────────────
 def run_taps(wos_target=WOS_DEFAULT, days=DAYS_DEFAULT):
     inventory = cache.get("inventory") or pull_inventory()
     sales = cache.get("sales")
@@ -325,7 +402,7 @@ def run_taps(wos_target=WOS_DEFAULT, days=DAYS_DEFAULT):
     ttd = sum(s["td"] for s in sales_store_totals.values()) if sales_store_totals else 0
     ttc = sum(s["tc"] for s in sales_store_totals.values()) if sales_store_totals else 0
     tq = sum(s["q"] for s in sales_store_totals.values()) if sales_store_totals else 0
-    stats = {"period": f"{(datetime.now()-timedelta(days=days)).strftime('%b %d')} - {datetime.now().strftime('%b %d %Y')}",
+    stats = {"period": f"{(datetime.utcnow()-timedelta(days=days)).strftime('%b %d')} - {datetime.utcnow().strftime('%b %d %Y')}",
         "source": "Flowhub API (Live)", "stores": len(set(p["s"] for p in products)),
         "net_revenue": round(tnr, 2), "gross_sales": round(ttp, 2), "discounts": round(ttd, 2),
         "cogs": round(ttc, 2), "gross_profit": round(tnr - ttc, 2),
@@ -358,15 +435,10 @@ def run_taps(wos_target=WOS_DEFAULT, days=DAYS_DEFAULT):
 
 @app.get("/")
 def root():
-    return {"status": "ok", "app": "TAPS", "version": "2.0",
+    return {"status": "ok", "app": "TAPS", "version": "2.1",
             "has_cid": bool(os.environ.get("FLOWHUB_CLIENT_ID")),
-            "has_key": bool(os.environ.get("FLOWHUB_API_KEY"))}
-
-@app.get("/api/debug-env")
-def debug_env():
-    return {"has_cid": bool(os.environ.get("FLOWHUB_CLIENT_ID")),
             "has_key": bool(os.environ.get("FLOWHUB_API_KEY")),
-            "env_keys": [k for k in os.environ.keys() if "FLOW" in k.upper()]}
+            "has_redis": bool(REDIS_URL)}
 
 @app.get("/api/status")
 def status():
@@ -374,7 +446,8 @@ def status():
         "sales_pulling": cache.get("sales_pulling", False),
         "products": len(cache["taps"]["pd"]) if cache.get("taps") else 0,
         "locations": len(cache.get("locations") or []),
-        "sales_items": len(cache.get("sales") or [])}
+        "sales_items": len(cache.get("sales") or []),
+        "redis": bool(get_redis())}
 
 @app.get("/api/inventory")
 def get_inventory():
@@ -410,7 +483,9 @@ def get_taps(wos: float = WOS_DEFAULT, days: int = DAYS_DEFAULT, refresh_invento
     if refresh_inventory or not cache.get("inventory"):
         pull_inventory()
     if not cache.get("sales"):
-        pull_sales_full(days)
+        # Try Redis first before doing a full pull
+        if not load_sales_from_redis():
+            pull_sales_full(days)
     result = run_taps(wos, days)
     return result
 
@@ -421,5 +496,14 @@ def get_taps_cached():
 
 @app.on_event("startup")
 async def startup():
-    log.info("TAPS API v2.0 — Parallel + Incremental")
-    log.info("Ready. Full pull: /api/refresh-sales | Quick update: /api/refresh-sales-quick")
+    log.info("TAPS API v2.1 — Redis-backed persistent cache")
+    r = get_redis()
+    if r:
+        loaded = load_sales_from_redis()
+        if loaded:
+            log.info("Sales restored from Redis — ready immediately!")
+        else:
+            log.info("No sales in Redis. Pull via /api/refresh-sales")
+    else:
+        log.info("Running without Redis persistence")
+    log.info("Ready.")
