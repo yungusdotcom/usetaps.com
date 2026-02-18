@@ -122,7 +122,7 @@ def pull_inventory():
             "oh": qty, "uc": round(uc, 2), "up": round(up, 2),
             "ic": round(qty * uc, 2), "ir": round(qty * up, 2)})
     cache["inventory"] = inventory
-    cache["inventory_ts"] = datetime.now().isoformat()
+    cache["inventory_ts"] = datetime.utcnow().isoformat() + "Z"
     log.info(f"Inventory: {len(inventory)} items, {sum(i['oh'] for i in inventory):,}u, ${sum(i['ic'] for i in inventory):,.2f}")
     return inventory
 
@@ -207,7 +207,7 @@ def pull_sales_full(days=DAYS_DEFAULT):
                 log.info(f"  ✓ {sc}: {len(items):,} items")
         sales_agg = aggregate_sales(all_items, days)
         cache["sales"] = sales_agg
-        cache["sales_raw_ts"] = datetime.now().isoformat()
+        cache["sales_raw_ts"] = datetime.utcnow().isoformat() + "Z"
         cache["sales_last_date"] = end_date
         log.info(f"Sales done: {len(all_items):,} raw → {len(sales_agg):,} aggregated")
         return sales_agg
@@ -265,7 +265,7 @@ def pull_sales_incremental():
             cache["sales_store_totals"] = st
             cache["sales"] = existing
         cache["sales_last_date"] = end_date
-        cache["sales_raw_ts"] = datetime.now().isoformat()
+        cache["sales_raw_ts"] = datetime.utcnow().isoformat() + "Z"
         log.info(f"Incremental: {len(new_items):,} new items merged")
         return cache["sales"]
     finally:
@@ -351,7 +351,7 @@ def run_taps(wos_target=WOS_DEFAULT, days=DAYS_DEFAULT):
             "over_cost": round(sum(p["ic"] for p in over))})
     result = {"st": stats, "ss": ss, "pd": products}
     cache["taps"] = result
-    cache["taps_ts"] = datetime.now().isoformat()
+    cache["taps_ts"] = datetime.utcnow().isoformat() + "Z"
     return result
 
 # ─── ENDPOINTS ────────────────────────────────────────────────────────────────
