@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 const API_BASE = window.location.hostname === "localhost"
   ? "http://localhost:8000"
-  : "https://taps-api.up.railway.app"; // Update after deploy
+  : "https://usetapscom-production.up.railway.app"; // Update after deploy
 
 const $ = (n) => n >= 1e6 ? "$" + (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? "$" + (n / 1e3).toFixed(1) + "K" : "$" + n.toFixed(0);
 const N = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : n.toLocaleString();
