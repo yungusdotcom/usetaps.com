@@ -164,13 +164,13 @@ export default function TAPSApp() {
     </div>
   );
 
-  const Filters = ({ extra }) => (
+  const filterBar = (extra) => (
     <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-      <div><label style={lbl}>Store</label><select style={sel} value={filters.s} onChange={(e) => setFilters({ ...filters, s: e.target.value })}>{stores.map((s) => <option key={s}>{s}</option>)}</select></div>
-      <div><label style={lbl}>Category</label><select style={sel} value={filters.c} onChange={(e) => setFilters({ ...filters, c: e.target.value })}>{cats.map((c) => <option key={c}>{c}</option>)}</select></div>
-      <div><label style={lbl}>Brand</label><select style={sel} value={filters.b} onChange={(e) => setFilters({ ...filters, b: e.target.value })}>{brands.map((b) => <option key={b}>{b}</option>)}</select></div>
-      <div><label style={lbl}>Class</label><select style={sel} value={filters.cl} onChange={(e) => setFilters({ ...filters, cl: e.target.value })}>{["All", "A", "B", "C", "D"].map((c) => <option key={c}>{c}</option>)}</select></div>
-      <div><label style={lbl}>Search</label><input style={{ ...sel, width: 200 }} placeholder="Product or brand..." value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} /></div>
+      <div><label style={lbl}>Store</label><select style={sel} value={filters.s} onChange={(e) => setFilters((f) => ({ ...f, s: e.target.value }))}>{stores.map((s) => <option key={s}>{s}</option>)}</select></div>
+      <div><label style={lbl}>Category</label><select style={sel} value={filters.c} onChange={(e) => setFilters((f) => ({ ...f, c: e.target.value }))}>{cats.map((c) => <option key={c}>{c}</option>)}</select></div>
+      <div><label style={lbl}>Brand</label><select style={sel} value={filters.b} onChange={(e) => setFilters((f) => ({ ...f, b: e.target.value }))}>{brands.map((b) => <option key={b}>{b}</option>)}</select></div>
+      <div><label style={lbl}>Class</label><select style={sel} value={filters.cl} onChange={(e) => setFilters((f) => ({ ...f, cl: e.target.value }))}>{["All", "A", "B", "C", "D"].map((c) => <option key={c}>{c}</option>)}</select></div>
+      <div><label style={lbl}>Search</label><input id="taps-search" style={{ ...sel, width: 200 }} placeholder="Product or brand..." value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} /></div>
       {extra}
     </div>
   );
@@ -322,7 +322,7 @@ export default function TAPSApp() {
           let d = getFiltered((p) => p.nr > 0);
           if (!sortStack.length) d.sort((a, b) => b.nr - a.nr);
           const tr = d.reduce((a, p) => a + p.nr, 0), tc = d.reduce((a, p) => a + p.cogs, 0);
-          return (<><Filters /><Summary items={[
+          return (<>{filterBar()}<Summary items={[
             { label: "Products", value: d.length }, { label: "Net Revenue", value: $(tr), color: "#22c55e" },
             { label: "COGS", value: $(tc) }, { label: "Margin", value: pc(tr > 0 ? (tr - tc) / tr * 100 : 0), color: "#22c55e" },
           ]} /><Table rows={d} cols={revCols} /></>);
@@ -331,21 +331,21 @@ export default function TAPSApp() {
         {tab === 2 && (() => {
           let d = getFiltered((p) => p.wv > 0);
           if (!sortStack.length) d.sort((a, b) => b.wv - a.wv);
-          return (<><Filters extra={
+          return (<>{filterBar(
             <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
               <label style={lbl}>WOS Target</label>
               <select style={{ ...sel, color: "#22c55e" }} value={wos} onChange={(e) => setWos(parseFloat(e.target.value))}>
                 {[2, 2.5, 3, 3.5, 4].map((w) => <option key={w} value={w}>{w}</option>)}
               </select>
             </div>
-          } /><Summary items={[{ label: "Products", value: d.length }, { label: "Inv", value: $(d.reduce((a, p) => a + p.ic, 0)) }]} />
+          )}<Summary items={[{ label: "Products", value: d.length }, { label: "Inv", value: $(d.reduce((a, p) => a + p.ic, 0)) }]} />
           <Table rows={d} cols={parCols} /></>);
         })()}
 
         {tab === 3 && (() => {
           let d = getFiltered((p) => p.wos != null && p.wos < 2 && p.wv >= 1);
           d.sort((a, b) => (a.wos || 0) - (b.wos || 0));
-          return (<><Filters /><Summary items={[{ label: "At Risk", value: d.length + " products", color: "#ef4444" }]} />
+          return (<>{filterBar()}<Summary items={[{ label: "At Risk", value: d.length + " products", color: "#ef4444" }]} />
           <Table rows={d} cols={[
             { l: "Store", g: (r) => r.s, k: "s" }, { l: "Product", g: (r) => r.p, k: "p" }, { l: "Cat", g: (r) => r.cat, k: "cat" },
             { l: "Cls", g: (r) => r.cls, k: "cls" }, { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv" },
@@ -361,7 +361,7 @@ export default function TAPSApp() {
           let d = getFiltered((p) => p.wos && p.wos > 8 && p.wv > 0);
           if (!sortStack.length) d.sort((a, b) => b.ic - a.ic);
           const tc = d.reduce((a, p) => a + p.ic, 0), eu = d.reduce((a, p) => a + Math.max(p.oh - p.par, 0), 0);
-          return (<><Filters /><Summary items={[
+          return (<>{filterBar()}<Summary items={[
             { label: "Overstocked", value: d.length, color: "#f97316" }, { label: "Inv Cost", value: $(tc), color: "#f97316" },
             { label: "Excess Units", value: N(eu) },
           ]} /><Table rows={d} cols={[
@@ -378,7 +378,7 @@ export default function TAPSApp() {
           let d = getFiltered((p) => p.wv === 0 && CANNABIS_CATS.includes(p.cat));
           d.sort((a, b) => b.ic - a.ic);
           const tc = d.reduce((a, p) => a + p.ic, 0);
-          return (<><Filters /><Summary items={[
+          return (<>{filterBar()}<Summary items={[
             { label: "Dead Products", value: d.length, color: "#ef4444" },
             { label: "Trapped Capital", value: $(tc), color: "#ef4444" },
             { label: "Action", value: "liquidate · transfer · deep discount" },
