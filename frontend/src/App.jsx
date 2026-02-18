@@ -424,19 +424,44 @@ export default function TAPSApp() {
         })()}
 
         {tab === 7 && (() => {
-          const need = products.filter((p) => p.oq > 0).sort((a, b) => a.sup < b.sup ? -1 : a.sup > b.sup ? 1 : b.oq * b.uc - a.oq * a.uc);
+          let need = products.filter((p) => p.oq > 0);
+          // Normalize supplier - empty becomes "Unknown Supplier"
+          need = need.map((p) => ({ ...p, sup: p.sup || "Unknown Supplier" }));
+          // Sort: known suppliers alphabetically first, Unknown at bottom, then by line value desc
+          need.sort((a, b) => {
+            const aUnk = a.sup === "Unknown Supplier" ? 1 : 0;
+            const bUnk = b.sup === "Unknown Supplier" ? 1 : 0;
+            if (aUnk !== bUnk) return aUnk - bUnk;
+            if (a.sup !== b.sup) return a.sup < b.sup ? -1 : 1;
+            return (b.oq * b.uc) - (a.oq * a.uc);
+          });
+          // Apply filters
+          if (filters.s !== "All") need = need.filter((p) => p.s === filters.s);
+          if (filters.c !== "All") need = need.filter((p) => p.cat === filters.c);
+          if (filters.b !== "All") need = need.filter((p) => p.b === filters.b);
+          if (filters.q) need = need.filter((p) => (p.p + p.b + p.sup).toLowerCase().includes(filters.q.toLowerCase()));
           const tv = need.reduce((a, p) => a + p.oq * p.uc, 0), tu = need.reduce((a, p) => a + p.oq, 0);
-          const sups = [...new Set(need.map((p) => p.sup || "Unknown"))];
+          const supList = [...new Set(need.map((p) => p.sup))];
+          const poSup = filters._poSup || "All";
+          const filtered = poSup === "All" ? need : need.filter((p) => p.sup === poSup);
+          const supOptions = ["All", ...supList.filter((s) => s !== "Unknown Supplier").sort(), ...(supList.includes("Unknown Supplier") ? ["Unknown Supplier"] : [])];
           return (<>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10, marginBottom: 16 }}>
               <KPI label="PO Value" value={$(tv)} sub={N(tu) + " units"} color="#f97316" />
               <KPI label="Line Items" value={need.length} color="#3b82f6" />
-              <KPI label="Suppliers" value={sups.length} />
+              <KPI label="Suppliers" value={supList.length} />
               <KPI label="WOS Target" value={wos} color="#8b5cf6" />
             </div>
-            <Table rows={need} cols={[
+            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div><label style={lbl}>Supplier</label><select style={sel} value={poSup} onChange={(e) => setFilters((f) => ({ ...f, _poSup: e.target.value }))}>{supOptions.map((s) => <option key={s}>{s}</option>)}</select></div>
+              <div><label style={lbl}>Store</label><select style={sel} value={filters.s} onChange={(e) => setFilters((f) => ({ ...f, s: e.target.value }))}>{stores.map((s) => <option key={s}>{s}</option>)}</select></div>
+              <div><label style={lbl}>Category</label><select style={sel} value={filters.c} onChange={(e) => setFilters((f) => ({ ...f, c: e.target.value }))}>{cats.map((c) => <option key={c}>{c}</option>)}</select></div>
+              <div><label style={lbl}>Search</label><input style={{ ...sel, width: 200 }} placeholder="Product, brand, or supplier..." value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} /></div>
+            </div>
+            <Table rows={filtered} cols={[
+              { l: "Supplier", g: (r) => r.sup, k: "sup", c: (r) => r.sup === "Unknown Supplier" ? { color: "#666", fontStyle: "italic" } : {} },
               { l: "Store", g: (r) => r.s, k: "s" }, { l: "Product", g: (r) => r.p, k: "p" },
-              { l: "Supplier", g: (r) => r.sup || "—", k: "sup" }, { l: "Cat", g: (r) => r.cat, k: "cat" },
+              { l: "Cat", g: (r) => r.cat, k: "cat" },
               { l: "Cls", g: (r) => r.cls, k: "cls" }, { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv" },
               { l: "On Hand", g: (r) => r.oh, nm: 1, k: "oh" },
               { l: "Par", g: (r) => r.par, nm: 1, k: "par", c: () => ({ color: "#8b5cf6" }) },
