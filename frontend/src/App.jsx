@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 const API_BASE = window.location.hostname === "localhost"
   ? "http://localhost:8000"
-  : "https://usetapscom-production.up.railway.app"; // Update after deploy
+  : "https://taps-api.up.railway.app"; // Update after deploy
 
 const $ = (n) => n >= 1e6 ? "$" + (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? "$" + (n / 1e3).toFixed(1) + "K" : "$" + n.toFixed(0);
 const N = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "K" : n.toLocaleString();
@@ -289,7 +289,10 @@ export default function TAPSApp() {
             {salesPulling ? "Pulling Sales..." : "↻ Sales (slow)"}
           </button>
           {S.inventory_ts && <span style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>
-            Inv: {new Date(S.inventory_ts).toLocaleTimeString()}
+            Inv: {new Date(S.inventory_ts).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}
+          </span>}
+          {S.sales_ts && <span style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>
+            Sales: {new Date(S.sales_ts).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}
           </span>}
         </div>
       </div>
