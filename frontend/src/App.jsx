@@ -254,6 +254,15 @@ export default function TAPSApp() {
     </>);
   };
 
+  // Trend indicator: WoW velocity change
+  const Trend = (r) => {
+    const t = r.tr || 0;
+    if (t === 0 || r.wv === 0) return <span style={{ color: "#444" }}>—</span>;
+    const arrow = t > 0 ? "▲" : "▼";
+    const color = t >= 20 ? "#22c55e" : t > 0 ? "#4ade80" : t > -20 ? "#f97316" : "#ef4444";
+    return <span style={{ color, fontWeight: 600, fontSize: 9 }}>{arrow} {Math.abs(t)}%</span>;
+  };
+
   const revCols = [
     { l: "Store", g: (r) => r.s, k: "s" }, { l: "Product", g: (r) => r.p, k: "p" },
     { l: "Cat", g: (r) => r.cat, k: "cat" },
@@ -262,6 +271,7 @@ export default function TAPSApp() {
     { l: "Margin%", g: (r) => r.mgn > 0 ? pc(r.mgn) : "—", nm: 1, k: "mgn", c: (r) => ({ color: r.mgn >= 55 ? "#22c55e" : r.mgn >= 45 ? "#f59e0b" : "#ef4444" }) },
     { l: "COGS", g: (r) => $(r.cogs), nm: 1, k: "cogs" },
     { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv" },
+    { l: "Trend", g: (r) => Trend(r), nm: 1, k: "tr" },
     { l: "On Hand", g: (r) => N(r.oh), nm: 1, k: "oh" },
   ];
 
@@ -270,6 +280,7 @@ export default function TAPSApp() {
     { l: "Cat", g: (r) => r.cat, k: "cat" },
     { l: "Cls", g: (r) => <span className={`c${r.cls}`}>{r.cls}</span>, k: "cls" },
     { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv", c: (r) => ({ color: r.wv >= 20 ? "#22c55e" : r.wv >= 10 ? "#3b82f6" : r.wv >= 3 ? "#f59e0b" : "#666" }) },
+    { l: "Trend", g: (r) => Trend(r), nm: 1, k: "tr" },
     { l: "On Hand", g: (r) => N(r.oh), nm: 1, k: "oh" },
     { l: "WOS", g: (r) => r.wos ? r.wos.toFixed(1) : "—", nm: 1, k: "wos", c: (r) => !r.wos ? {} : r.wos < 1 ? { color: "#ef4444", fontWeight: 700 } : r.wos > 8 ? { color: "#f97316" } : {} },
     { l: "Par", g: (r) => r.par, nm: 1, k: "par", c: () => ({ color: "#8b5cf6" }) },
@@ -414,6 +425,7 @@ export default function TAPSApp() {
             <Table rows={d} cols={[
               { l: "Product", g: (r) => r.p, k: "p" }, { l: "Cat", g: (r) => r.cat, k: "cat" },
               { l: "Cls", g: (r) => r.cls, k: "cls" }, { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv" },
+              { l: "Trend", g: (r) => Trend(r), nm: 1, k: "tr" },
               { l: "On Hand", g: (r) => N(r.oh), nm: 1, k: "oh" },
               { l: "WOS", g: (r) => r.wos ? r.wos.toFixed(1) : "—", nm: 1, k: "wos", c: (r) => !r.wos ? {} : r.wos < 1 ? { color: "#ef4444" } : r.wos > 8 ? { color: "#f97316" } : {} },
               { l: "Net Rev", g: (r) => r.nr > 0 ? $(r.nr) : "—", nm: 1, k: "nr", c: (r) => r.nr > 0 ? { color: "#22c55e" } : {} },

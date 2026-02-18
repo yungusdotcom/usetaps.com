@@ -213,12 +213,14 @@ def pull_store_sales(loc, start_date, end_date):
         if not orders: break
         for order in orders:
             if order.get("orderStatus", "sold").lower() in ("cancelled", "voided") or order.get("voided"): continue
+            odate = (order.get("createdAt") or order.get("created_at") or order.get("completedAt") or "")[:10]
             for it in order.get("itemsInCart", []):
                 tp = it.get("totalPrice", 0) or 0
                 td = it.get("totalDiscounts", 0) or 0
                 items.append({"s": store_clean, "vid": it.get("variantId", ""),
                     "q": it.get("quantity", 0) or 0, "tp": round(tp, 2), "td": round(td, 2),
-                    "nr": round(tp - td, 2), "tc": round(it.get("totalCost", 0) or 0, 2)})
+                    "nr": round(tp - td, 2), "tc": round(it.get("totalCost", 0) or 0, 2),
+                    "dt": odate})
         pulled += len(orders)
         log.info(f"    {name}: p{page} ({pulled:,}/{total:,})")
         if len(orders) < PAGE_SIZE: break
@@ -229,17 +231,40 @@ def pull_store_sales(loc, start_date, end_date):
 # ─── SALES AGGREGATION ───────────────────────────────────────────────────────
 def aggregate_sales(raw_items, days):
     weeks = days / 7
+    today = datetime.utcnow().date()
+    w1_start = today - timedelta(days=7)   # Last 7 days
+    w2_start = today - timedelta(days=14)  # Days 8-14
+    w3_start = today - timedelta(days=21)  # Days 15-21
+    w4_start = today - timedelta(days=28)  # Days 22-28
+
     agg = {}
     store_totals = {}
     for item in raw_items:
         key = (item["s"], item["vid"])
         if key not in agg:
-            agg[key] = {"s": item["s"], "vid": item["vid"], "q": 0, "tp": 0, "td": 0, "nr": 0, "tc": 0}
+            agg[key] = {"s": item["s"], "vid": item["vid"], "q": 0, "tp": 0, "td": 0, "nr": 0, "tc": 0,
+                        "w1": 0, "w2": 0, "w3": 0, "w4": 0}
         agg[key]["q"] += item["q"]
         agg[key]["tp"] += item["tp"]
         agg[key]["td"] += item["td"]
         agg[key]["nr"] += item["nr"]
         agg[key]["tc"] += item["tc"]
+
+        # Bucket by week
+        dt = item.get("dt", "")
+        if dt:
+            try:
+                d = datetime.strptime(dt, "%Y-%m-%d").date()
+                if d >= w1_start:
+                    agg[key]["w1"] += item["q"]
+                elif d >= w2_start:
+                    agg[key]["w2"] += item["q"]
+                elif d >= w3_start:
+                    agg[key]["w3"] += item["q"]
+                elif d >= w4_start:
+                    agg[key]["w4"] += item["q"]
+            except: pass
+
         if item["s"] not in store_totals:
             store_totals[item["s"]] = {"nr": 0, "tp": 0, "td": 0, "tc": 0, "q": 0}
         store_totals[item["s"]]["nr"] += item["nr"]
@@ -411,6 +436,21 @@ def run_taps(wos_target=WOS_DEFAULT, days=DAYS_DEFAULT):
         if sold == 0 and store not in stores_with_sales and vid in vid_vels:
             vel = vid_vels[vid]
             sold = vel * weeks
+
+        # Week-over-week trend
+        w1 = sd.get("w1", 0) if sd else 0  # Last 7 days
+        w2 = sd.get("w2", 0) if sd else 0  # Days 8-14
+        w3 = sd.get("w3", 0) if sd else 0  # Days 15-21
+        w4 = sd.get("w4", 0) if sd else 0  # Days 22-28
+        # Trend: compare current week vs average of prior weeks
+        prior_avg = (w2 + w3 + w4) / 3 if (w2 + w3 + w4) > 0 else 0
+        if prior_avg > 0:
+            trend_pct = round((w1 - prior_avg) / prior_avg * 100, 0)
+        elif w1 > 0:
+            trend_pct = 100  # New mover, no prior history
+        else:
+            trend_pct = 0
+
         wos = inv["oh"] / vel if vel > 0 else None
         par = max(round(vel * wos_target), 0) if vel > 0 else 0
         oq = max(par - inv["oh"], 0)
@@ -421,7 +461,8 @@ def run_taps(wos_target=WOS_DEFAULT, days=DAYS_DEFAULT):
             "wos": round(wos, 1) if wos and wos < 999 else None,
             "par": par, "oq": oq, "nr": round(nr, 2), "cogs": round(tc_sold, 2),
             "mgn": mgn, "ic": round(inv["ic"], 2), "uc": inv["uc"], "up": inv["up"],
-            "sup": (inv["sup"] or "")[:30]})
+            "sup": (inv["sup"] or "")[:30],
+            "w1": w1, "w2": w2, "w3": w3, "w4": w4, "tr": int(trend_pct)})
     tnr = sum(s["nr"] for s in sales_store_totals.values()) if sales_store_totals else 0
     ttp = sum(s["tp"] for s in sales_store_totals.values()) if sales_store_totals else 0
     ttd = sum(s["td"] for s in sales_store_totals.values()) if sales_store_totals else 0
