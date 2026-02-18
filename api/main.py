@@ -141,7 +141,12 @@ def pull_inventory():
     if not data: return None
     items = data.get("data", [])
     log.info(f"Raw API items: {len(items)}")
+
+    # Build global supplier map: variantId -> supplier name
+    sup_map = cache.get("supplier_map", {})
+
     inventory = []
+    sup_found = 0
     for item in items:
         item_loc = item.get("locationId", "")
         store_name = loc_lookup.get(item_loc)
@@ -154,15 +159,35 @@ def pull_inventory():
         uc = (item.get("costInMinorUnits", 0) or 0) / 100
         up = (item.get("priceInMinorUnits", item.get("preTaxPriceInPennies", 0)) or 0) / 100
         sc = store_name.replace("Thrive ", "").split(" - ")[0] if " - RD" in store_name else store_name.replace("Thrive ", "")
-        inventory.append({"s": sc, "vid": item.get("variantId", ""), "p": pname,
+
+        # Extract supplier from multiple possible fields
+        sup = (item.get("supplierName") or item.get("vendorName") or
+               item.get("supplier") or item.get("vendor") or "")
+        vid = item.get("variantId", "")
+
+        # Cache supplier by variantId (once found, always mapped)
+        if sup and vid:
+            sup_map[vid] = sup
+            sup_found += 1
+        elif vid in sup_map:
+            sup = sup_map[vid]
+
+        inventory.append({"s": sc, "vid": vid, "p": pname,
             "cat": item.get("category", item.get("customCategoryName", "")),
-            "b": item.get("brand", ""), "sup": item.get("supplierName", "") or "",
+            "b": item.get("brand", ""), "sup": sup,
             "typ": item.get("type", ""), "str": item.get("strainName", "") or "",
             "oh": qty, "uc": round(uc, 2), "up": round(up, 2),
             "ic": round(qty * uc, 2), "ir": round(qty * up, 2)})
+
     cache["inventory"] = inventory
+    cache["supplier_map"] = sup_map
     cache["inventory_ts"] = datetime.utcnow().isoformat() + "Z"
+
+    # Persist supplier map to Redis
+    redis_set("taps:supplier_map", sup_map, ttl=86400*30)
+
     log.info(f"Inventory: {len(inventory)} items, {sum(i['oh'] for i in inventory):,}u, ${sum(i['ic'] for i in inventory):,.2f}")
+    log.info(f"Suppliers: {sup_found} items mapped, {len(sup_map)} unique variants cached")
     return inventory
 
 # ─── SALES: SINGLE STORE ─────────────────────────────────────────────────────
@@ -499,6 +524,12 @@ async def startup():
     log.info("TAPS API v2.1 — Redis-backed persistent cache")
     r = get_redis()
     if r:
+        # Load supplier map
+        sup_map = redis_get("taps:supplier_map")
+        if sup_map:
+            cache["supplier_map"] = sup_map
+            log.info(f"Loaded supplier map from Redis: {len(sup_map)} variants")
+
         loaded = load_sales_from_redis()
         if loaded:
             log.info("Sales restored from Redis — ready immediately!")
