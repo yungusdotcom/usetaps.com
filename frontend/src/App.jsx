@@ -77,13 +77,22 @@ export default function TAPSApp() {
       const existing = prev.findIndex((s) => s.ci === ci);
       if (existing !== -1) {
         if (existing === prev.length - 1) {
-          const next = [...prev];
-          next[existing] = { ci, asc: !next[existing].asc };
-          return next;
+          // It's the most recent sort column
+          if (prev[existing].asc) {
+            // First click was asc → flip to desc
+            const next = [...prev];
+            next[existing] = { ci, asc: false };
+            return next;
+          } else {
+            // Second click was desc → remove it (reset)
+            return prev.filter((s) => s.ci !== ci);
+          }
         } else {
+          // Clicking a non-primary sort → move to end as asc
           return [...prev.filter((s) => s.ci !== ci), { ci, asc: true }];
         }
       }
+      // New column → add as asc
       return [...prev, { ci, asc: true }];
     });
   };
