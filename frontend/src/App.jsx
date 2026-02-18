@@ -22,7 +22,7 @@ export default function TAPSApp() {
   const [refreshing, setRefreshing] = useState(false);
   const [salesPulling, setSalesPulling] = useState(false);
   const [tab, setTab] = useState(0);
-  const [filters, setFilters] = useState({ s: "All", c: "All", cl: "All", q: "" });
+  const [filters, setFilters] = useState({ s: "All", c: "All", cl: "All", b: "All", q: "" });
   const [sortStack, setSortStack] = useState([]);
   const [wos, setWos] = useState(2.5);
   const [storeView, setStoreView] = useState("");
@@ -88,7 +88,7 @@ export default function TAPSApp() {
     });
   };
 
-  const switchTab = (i) => { setTab(i); setSortStack([]); setFilters({ s: "All", c: "All", cl: "All", q: "" }); };
+  const switchTab = (i) => { setTab(i); setSortStack([]); setFilters({ s: "All", c: "All", cl: "All", b: "All", q: "" }); };
 
   if (loading) return (
     <div style={{ background: "#0a0a0a", color: "#22c55e", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'JetBrains Mono', monospace" }}>
@@ -127,6 +127,7 @@ export default function TAPSApp() {
     if (filters.s !== "All") d = d.filter((p) => p.s === filters.s);
     if (filters.c !== "All") d = d.filter((p) => p.cat === filters.c);
     if (filters.cl !== "All") d = d.filter((p) => p.cls === filters.cl);
+    if (filters.b !== "All") d = d.filter((p) => p.b === filters.b);
     if (filters.q) d = d.filter((p) => (p.p + p.b).toLowerCase().includes(filters.q.toLowerCase()));
     if (extra) d = d.filter(extra);
     return d;
@@ -152,6 +153,7 @@ export default function TAPSApp() {
 
   const stores = ["All", ...new Set(products.map((p) => p.s))].sort();
   const cats = ["All", ...new Set(products.map((p) => p.cat).filter(Boolean))].sort();
+  const brands = ["All", ...new Set(products.map((p) => p.b).filter(Boolean))].sort();
 
   // ── COMPONENTS ──
   const KPI = ({ label, value, sub, color }) => (
@@ -166,6 +168,7 @@ export default function TAPSApp() {
     <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
       <div><label style={lbl}>Store</label><select style={sel} value={filters.s} onChange={(e) => setFilters({ ...filters, s: e.target.value })}>{stores.map((s) => <option key={s}>{s}</option>)}</select></div>
       <div><label style={lbl}>Category</label><select style={sel} value={filters.c} onChange={(e) => setFilters({ ...filters, c: e.target.value })}>{cats.map((c) => <option key={c}>{c}</option>)}</select></div>
+      <div><label style={lbl}>Brand</label><select style={sel} value={filters.b} onChange={(e) => setFilters({ ...filters, b: e.target.value })}>{brands.map((b) => <option key={b}>{b}</option>)}</select></div>
       <div><label style={lbl}>Class</label><select style={sel} value={filters.cl} onChange={(e) => setFilters({ ...filters, cl: e.target.value })}>{["All", "A", "B", "C", "D"].map((c) => <option key={c}>{c}</option>)}</select></div>
       <div><label style={lbl}>Search</label><input style={{ ...sel, width: 200 }} placeholder="Product or brand..." value={filters.q} onChange={(e) => setFilters({ ...filters, q: e.target.value })} /></div>
       {extra}
@@ -457,5 +460,3 @@ const sel = { background: "#1a1a1a", border: "1px solid #222", color: "#e5e5e5",
 const th = { position: "sticky", top: 0, background: "#1a1a1a", color: "#22c55e", fontSize: 9, textTransform: "uppercase", letterSpacing: 0.5, padding: "7px 5px", cursor: "pointer", borderBottom: "1px solid #222", whiteSpace: "nowrap", userSelect: "none", zIndex: 1 };
 const td = { padding: 5, borderBottom: "1px solid #1a1a1a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 280 };
 const btnStyle = { background: "#22c55e11", color: "#22c55e", border: "1px solid #22c55e44", padding: "5px 14px", borderRadius: 4, cursor: "pointer", fontFamily: "'JetBrains Mono', monospace", fontSize: 10 };
-
-
