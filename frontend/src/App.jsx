@@ -449,7 +449,10 @@ export default function TAPSApp() {
           // ── BRAND DEEP DIVE ──
           const brandList = [...new Set(products.map((p) => p.b).filter(Boolean))].sort();
           const bv = brandView || brandList[0] || "";
-          const bp = products.filter((p) => p.b === bv);
+          const bdStore = filters._bdStore || "All";
+          const bpAll = products.filter((p) => p.b === bv);
+          const bp = bdStore === "All" ? bpAll : bpAll.filter((p) => p.s === bdStore);
+          const brandStoreList = ["All", ...[...new Set(bpAll.map((p) => p.s))].sort()];
 
           // Aggregate brand stats
           const bRev = bp.reduce((a, p) => a + p.nr, 0);
@@ -487,9 +490,9 @@ export default function TAPSApp() {
             catBreak[p.cat].count++;
           });
 
-          // Store breakdown
+          // Store breakdown (always from all stores for context)
           const storeBreak = {};
-          bp.forEach((p) => {
+          bpAll.forEach((p) => {
             if (!storeBreak[p.s]) storeBreak[p.s] = { rev: 0, vel: 0, inv: 0, units: 0, count: 0, w1: 0, w2: 0, w3: 0, w4: 0 };
             storeBreak[p.s].rev += p.nr;
             storeBreak[p.s].vel += p.wv;
@@ -531,14 +534,20 @@ export default function TAPSApp() {
           const miniVal = { fontSize: 13, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" };
 
           return (<>
-            {/* Brand Selector */}
+            {/* Brand + Store Selector */}
             <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
               <div><label style={lbl}>Brand</label>
-                <select style={{ ...sel, fontSize: 12, padding: "7px 12px" }} value={bv} onChange={(e) => setBrandView(e.target.value)}>
+                <select style={{ ...sel, fontSize: 12, padding: "7px 12px" }} value={bv} onChange={(e) => { setBrandView(e.target.value); setFilters((f) => ({ ...f, _bdStore: "All" })); }}>
                   {brandList.map((b) => <option key={b}>{b}</option>)}
                 </select>
               </div>
+              <div><label style={lbl}>Store</label>
+                <select style={{ ...sel, fontSize: 12, padding: "7px 12px" }} value={bdStore} onChange={(e) => setFilters((f) => ({ ...f, _bdStore: e.target.value }))}>
+                  {brandStoreList.map((s) => <option key={s}>{s}</option>)}
+                </select>
+              </div>
               <div style={{ marginLeft: "auto", fontFamily: "'JetBrains Mono', monospace" }}>
+                {bdStore !== "All" && <span style={{ fontSize: 9, color: "#f59e0b", marginRight: 8 }}>Viewing: {bdStore}</span>}
                 <span style={{ fontSize: 9, color: "#555" }}>RANK </span>
                 <span style={{ fontSize: 18, fontWeight: 800, color: brandRank <= 3 ? "#22c55e" : brandRank <= 10 ? "#3b82f6" : brandRank <= 25 ? "#f59e0b" : "#666" }}>#{brandRank}</span>
                 <span style={{ fontSize: 9, color: "#555" }}> / {brandRanked.length}</span>
