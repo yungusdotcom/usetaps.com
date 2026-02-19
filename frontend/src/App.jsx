@@ -14,7 +14,7 @@ const TABS = [
   { n: "Store Deep Dive", i: "◫" }, { n: "Brand Deep Dive", i: "◈" }, { n: "Purchase Orders", i: "⬡" },
 ];
 
-const CANNABIS_CATS = ["FLOWER", "Concentrates", "Edibles", "Infused Flower", "Capsules"];
+const CANNABIS_CATS = ["FLOWER", "Pre Rolls", "Concentrates", "Carts", "Disposables", "Edibles", "Infused Flower", "Capsules", "Tinctures", "Topicals"];
 
 export default function TAPSApp() {
   const [data, setData] = useState(null);
@@ -446,178 +446,237 @@ export default function TAPSApp() {
         })()}
 
         {tab === 7 && (() => {
-          // Brand Deep Dive
-          const allBrands = [...new Set(products.map((p) => p.b).filter(Boolean))].sort();
-          const bv = brandView || allBrands[0] || "";
+          // ── BRAND DEEP DIVE ──
+          const brandList = [...new Set(products.map((p) => p.b).filter(Boolean))].sort();
+          const bv = brandView || brandList[0] || "";
           const bp = products.filter((p) => p.b === bv);
-          const bpSelling = bp.filter((p) => p.wv > 0);
-          const bpDead = bp.filter((p) => p.wv === 0);
 
-          // Aggregated metrics
-          const totalRev = bp.reduce((a, p) => a + p.nr, 0);
-          const totalCogs = bp.reduce((a, p) => a + p.cogs, 0);
-          const totalInvCost = bp.reduce((a, p) => a + p.ic, 0);
-          const totalUnits = bp.reduce((a, p) => a + p.oh, 0);
-          const totalSold = bp.reduce((a, p) => a + (p.wv * 4.43), 0); // ~31 days
-          const avgMargin = totalRev > 0 ? (totalRev - totalCogs) / totalRev * 100 : 0;
-          const totalVel = bp.reduce((a, p) => a + p.wv, 0);
-          const avgWos = totalVel > 0 ? totalUnits / totalVel : null;
-          const deadCost = bpDead.reduce((a, p) => a + p.ic, 0);
+          // Aggregate brand stats
+          const bRev = bp.reduce((a, p) => a + p.nr, 0);
+          const bCogs = bp.reduce((a, p) => a + p.cogs, 0);
+          const bInvCost = bp.reduce((a, p) => a + p.ic, 0);
+          const bInvUnits = bp.reduce((a, p) => a + p.oh, 0);
+          const bUnitsSold = bp.reduce((a, p) => a + (p.wv * (S.period ? 31/7 : 1)), 0);
+          const bMargin = bRev > 0 ? (bRev - bCogs) / bRev * 100 : 0;
+          const bVel = bp.reduce((a, p) => a + p.wv, 0);
+          const selling = bp.filter((p) => p.wv > 0);
+          const dead = bp.filter((p) => p.wv === 0);
           const overstock = bp.filter((p) => p.wos && p.wos > 8 && p.wv > 0);
-          const overstockCost = overstock.reduce((a, p) => a + p.ic, 0);
-          const stockouts = bp.filter((p) => p.wos != null && p.wos < 2 && p.wv >= 1);
-          const poItems = bp.filter((p) => p.oq > 0);
-          const poValue = poItems.reduce((a, p) => a + p.oq * p.uc, 0);
+          const stockout = bp.filter((p) => p.wos != null && p.wos < 2 && p.wv >= 1);
+          const needsOrder = bp.filter((p) => p.oq > 0);
+          const orderVal = needsOrder.reduce((a, p) => a + p.oq * p.uc, 0);
 
-          // Week trend for entire brand
-          const bw1 = bp.reduce((a, p) => a + (p.w1 || 0), 0);
-          const bw2 = bp.reduce((a, p) => a + (p.w2 || 0), 0);
-          const bw3 = bp.reduce((a, p) => a + (p.w3 || 0), 0);
-          const bw4 = bp.reduce((a, p) => a + (p.w4 || 0), 0);
-          const priorAvg = (bw2 + bw3 + bw4) / 3;
-          const brandTrend = priorAvg > 0 ? ((bw1 - priorAvg) / priorAvg * 100) : (bw1 > 0 ? 100 : 0);
-
-          // Store breakdown for this brand
-          const brandStores = [...new Set(bp.map((p) => p.s))].sort();
-          const storeBreakdown = brandStores.map((s) => {
-            const sp = bp.filter((p) => p.s === s);
-            const rev = sp.reduce((a, p) => a + p.nr, 0);
-            const inv = sp.reduce((a, p) => a + p.ic, 0);
-            const vel = sp.reduce((a, p) => a + p.wv, 0);
-            const units = sp.reduce((a, p) => a + p.oh, 0);
-            const sw1 = sp.reduce((a, p) => a + (p.w1 || 0), 0);
-            const sw2 = sp.reduce((a, p) => a + (p.w2 || 0), 0);
-            const sw3 = sp.reduce((a, p) => a + (p.w3 || 0), 0);
-            const sw4 = sp.reduce((a, p) => a + (p.w4 || 0), 0);
-            const pa = (sw2 + sw3 + sw4) / 3;
-            const tr = pa > 0 ? ((sw1 - pa) / pa * 100) : (sw1 > 0 ? 100 : 0);
-            return { s, rev, inv, vel: Math.round(vel * 10) / 10, units, skus: sp.length, dead: sp.filter((p) => p.wv === 0).length, tr: Math.round(tr) };
-          });
+          // WoW trend for brand
+          const bW1 = bp.reduce((a, p) => a + (p.w1 || 0), 0);
+          const bW2 = bp.reduce((a, p) => a + (p.w2 || 0), 0);
+          const bW3 = bp.reduce((a, p) => a + (p.w3 || 0), 0);
+          const bW4 = bp.reduce((a, p) => a + (p.w4 || 0), 0);
+          const bPriorAvg = (bW2 + bW3 + bW4) / 3;
+          const bTrendPct = bPriorAvg > 0 ? ((bW1 - bPriorAvg) / bPriorAvg * 100) : bW1 > 0 ? 100 : 0;
+          const tArrow = bTrendPct > 0 ? "▲" : bTrendPct < 0 ? "▼" : "—";
+          const tColor = bTrendPct >= 20 ? "#22c55e" : bTrendPct > 0 ? "#4ade80" : bTrendPct > -20 ? "#f97316" : "#ef4444";
 
           // Category breakdown
-          const brandCats = [...new Set(bp.map((p) => p.cat).filter(Boolean))].sort();
-          const catBreakdown = brandCats.map((c) => {
-            const cp = bp.filter((p) => p.cat === c);
-            return { cat: c, rev: cp.reduce((a, p) => a + p.nr, 0), vel: Math.round(cp.reduce((a, p) => a + p.wv, 0) * 10) / 10, skus: cp.length, inv: cp.reduce((a, p) => a + p.ic, 0) };
-          }).sort((a, b) => b.rev - a.rev);
+          const catBreak = {};
+          bp.forEach((p) => {
+            if (!catBreak[p.cat]) catBreak[p.cat] = { rev: 0, vel: 0, inv: 0, units: 0, count: 0 };
+            catBreak[p.cat].rev += p.nr;
+            catBreak[p.cat].vel += p.wv;
+            catBreak[p.cat].inv += p.ic;
+            catBreak[p.cat].units += p.oh;
+            catBreak[p.cat].count++;
+          });
 
-          // Velocity spark: weekly units as mini bar chart
-          const maxW = Math.max(bw1, bw2, bw3, bw4, 1);
-          const spark = (val, label) => (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flex: 1 }}>
-              <div style={{ width: "100%", background: "#1a1a1a", borderRadius: 3, height: 60, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-                <div style={{ width: "70%", background: val === bw1 ? (brandTrend >= 0 ? "#22c55e" : "#ef4444") : "#333", borderRadius: "3px 3px 0 0", height: `${(val / maxW) * 100}%`, minHeight: 2, transition: "height 0.3s" }} />
-              </div>
-              <div style={{ fontSize: 11, fontWeight: 700, color: val === bw1 ? "#e5e5e5" : "#888", fontFamily: "'JetBrains Mono', monospace" }}>{val}</div>
-              <div style={{ fontSize: 8, color: "#555", fontFamily: "'JetBrains Mono', monospace" }}>{label}</div>
-            </div>
-          );
+          // Store breakdown
+          const storeBreak = {};
+          bp.forEach((p) => {
+            if (!storeBreak[p.s]) storeBreak[p.s] = { rev: 0, vel: 0, inv: 0, units: 0, count: 0, w1: 0, w2: 0, w3: 0, w4: 0 };
+            storeBreak[p.s].rev += p.nr;
+            storeBreak[p.s].vel += p.wv;
+            storeBreak[p.s].inv += p.ic;
+            storeBreak[p.s].units += p.oh;
+            storeBreak[p.s].count++;
+            storeBreak[p.s].w1 += (p.w1 || 0);
+            storeBreak[p.s].w2 += (p.w2 || 0);
+            storeBreak[p.s].w3 += (p.w3 || 0);
+            storeBreak[p.s].w4 += (p.w4 || 0);
+          });
+
+          // Class distribution
+          const clsDist = { A: 0, B: 0, C: 0, D: 0 };
+          bp.forEach((p) => clsDist[p.cls]++);
+
+          // Velocity sparkline (W4 → W3 → W2 → W1)
+          const weeks = [bW4, bW3, bW2, bW1];
+          const maxW = Math.max(...weeks, 1);
+          const sparkW = 120, sparkH = 32;
+
+          // Top products by revenue
+          const topRev = [...bp].filter((p) => p.nr > 0).sort((a, b) => b.nr - a.nr).slice(0, 5);
+          // Top movers (highest trend)
+          const topMovers = [...bp].filter((p) => p.tr && p.wv > 0).sort((a, b) => b.tr - a.tr).slice(0, 5);
+          // Biggest decliners
+          const decliners = [...bp].filter((p) => p.tr < 0 && p.wv > 0).sort((a, b) => a.tr - b.tr).slice(0, 5);
+
+          // All brand revenue for rank
+          const allBrandRev = {};
+          products.forEach((p) => { if (p.b) allBrandRev[p.b] = (allBrandRev[p.b] || 0) + p.nr; });
+          const brandRanked = Object.entries(allBrandRev).sort((a, b) => b[1] - a[1]);
+          const brandRank = brandRanked.findIndex(([b]) => b === bv) + 1;
+
+          const bar = { background: "#1a1a1a", borderRadius: 4, overflow: "hidden", height: 6, marginTop: 3 };
+          const barFill = (pct, color) => ({ width: Math.max(pct, 2) + "%", height: "100%", background: color, borderRadius: 4 });
+          const miniCard = { background: "#111", border: "1px solid #1a1a1a", borderRadius: 6, padding: "8px 10px" };
+          const miniLabel = { fontSize: 8, color: "#555", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: 0.5 };
+          const miniVal = { fontSize: 13, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" };
 
           return (<>
-            <div style={{ display: "flex", gap: 12, marginBottom: 16, alignItems: "flex-end", flexWrap: "wrap" }}>
+            {/* Brand Selector */}
+            <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
               <div><label style={lbl}>Brand</label>
-                <select style={{ ...sel, fontSize: 12, padding: "7px 10px" }} value={bv} onChange={(e) => setBrandView(e.target.value)}>
-                  {allBrands.map((b) => <option key={b}>{b}</option>)}
+                <select style={{ ...sel, fontSize: 12, padding: "7px 12px" }} value={bv} onChange={(e) => setBrandView(e.target.value)}>
+                  {brandList.map((b) => <option key={b}>{b}</option>)}
                 </select>
               </div>
-              <div style={{ marginLeft: "auto", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "#555" }}>
-                {bp.length} products across {brandStores.length} stores
+              <div style={{ marginLeft: "auto", fontFamily: "'JetBrains Mono', monospace" }}>
+                <span style={{ fontSize: 9, color: "#555" }}>RANK </span>
+                <span style={{ fontSize: 18, fontWeight: 800, color: brandRank <= 3 ? "#22c55e" : brandRank <= 10 ? "#3b82f6" : brandRank <= 25 ? "#f59e0b" : "#666" }}>#{brandRank}</span>
+                <span style={{ fontSize: 9, color: "#555" }}> / {brandRanked.length}</span>
               </div>
             </div>
 
-            {/* Hero Metrics Row */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
-              <KPI label="Net Revenue" value={$(totalRev)} color="#22c55e" />
-              <KPI label="Margin" value={pc(avgMargin)} color={avgMargin >= 52 ? "#22c55e" : avgMargin >= 40 ? "#f59e0b" : "#ef4444"} />
-              <KPI label="Total Velocity" value={totalVel.toFixed(1) + "/wk"} color="#3b82f6" />
-              <KPI label="WoW Trend" value={(brandTrend >= 0 ? "▲ " : "▼ ") + Math.abs(Math.round(brandTrend)) + "%"} color={brandTrend >= 0 ? "#22c55e" : "#ef4444"} />
-              <KPI label="Inventory" value={$(totalInvCost)} sub={N(totalUnits) + " units"} />
-              <KPI label="Avg WOS" value={avgWos ? avgWos.toFixed(1) + "w" : "—"} color={!avgWos ? "#666" : avgWos < 2 ? "#ef4444" : avgWos > 6 ? "#f97316" : "#22c55e"} />
+            {/* Hero KPIs */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: 8, marginBottom: 16 }}>
+              <KPI label="Net Revenue" value={$(bRev)} color="#22c55e" />
+              <KPI label="Margin" value={pc(bMargin)} color={bMargin >= 52 ? "#22c55e" : bMargin >= 40 ? "#f59e0b" : "#ef4444"} />
+              <KPI label="Total Velocity" value={bVel.toFixed(1) + "/wk"} sub={selling.length + " SKUs selling"} color="#3b82f6" />
+              <div style={{ background: "#111", border: "1px solid #222", borderRadius: 6, padding: "12px 14px" }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "#666", textTransform: "uppercase", letterSpacing: 1 }}>WoW Trend</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: tColor, fontFamily: "'JetBrains Mono', monospace" }}>{tArrow} {Math.abs(Math.round(bTrendPct))}%</span>
+                  <svg width={sparkW} height={sparkH} style={{ marginLeft: "auto" }}>
+                    {weeks.map((w, i) => {
+                      const bw = sparkW / 4 - 2;
+                      const h = Math.max((w / maxW) * sparkH, 2);
+                      const fill = i === 3 ? (bTrendPct >= 0 ? "#22c55e" : "#ef4444") : "#333";
+                      return <rect key={i} x={i * (bw + 2)} y={sparkH - h} width={bw} height={h} rx={2} fill={fill} />;
+                    })}
+                  </svg>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
+                  {["W4", "W3", "W2", "W1"].map((w, i) => <span key={w} style={{ fontSize: 7, color: "#444", fontFamily: "'JetBrains Mono', monospace" }}>{w}: {weeks[i]}</span>)}
+                </div>
+              </div>
+              <KPI label="Inventory" value={$(bInvCost)} sub={N(bInvUnits) + " units"} />
+              <KPI label="Dead SKUs" value={dead.length} sub={dead.length > 0 ? $(dead.reduce((a, p) => a + p.ic, 0)) + " tied up" : "clean"} color={dead.length > 0 ? "#ef4444" : "#22c55e"} />
+              <KPI label="Needs Order" value={needsOrder.length + " SKUs"} sub={orderVal > 0 ? $(orderVal) : "stocked up"} color="#f97316" />
+              <KPI label="At Risk" value={stockout.length + " SKUs"} sub={stockout.length > 0 ? "< 2 WOS" : "all good"} color={stockout.length > 0 ? "#ef4444" : "#22c55e"} />
             </div>
 
-            {/* Health Indicators */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
-              <div style={{ background: "#111", border: "1px solid #222", borderRadius: 6, padding: "10px 14px" }}>
-                <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>PORTFOLIO HEALTH</div>
-                <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                  <div style={{ flex: bpSelling.length, height: 6, background: "#22c55e", borderRadius: 3 }} />
-                  <div style={{ flex: bpDead.length || 0.01, height: 6, background: "#ef4444", borderRadius: 3 }} />
-                </div>
-                <div style={{ fontSize: 10, color: "#888", fontFamily: "'JetBrains Mono', monospace", marginTop: 6 }}>
-                  <span style={{ color: "#22c55e" }}>{bpSelling.length} selling</span> · <span style={{ color: "#ef4444" }}>{bpDead.length} dead</span>
-                </div>
+            {/* Insights Row */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+              {/* Top Revenue Products */}
+              <div style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 6, padding: 12 }}>
+                <div style={{ ...miniLabel, marginBottom: 8, color: "#22c55e" }}>Top Revenue</div>
+                {topRev.map((p, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #1a1a1a", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                    <span style={{ color: "#ccc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "65%" }}>{p.p}</span>
+                    <span style={{ color: "#22c55e", fontWeight: 600 }}>{$(p.nr)}</span>
+                  </div>
+                ))}
+                {topRev.length === 0 && <div style={{ color: "#444", fontSize: 10 }}>No revenue data</div>}
               </div>
-              <div style={{ background: "#111", border: "1px solid #222", borderRadius: 6, padding: "10px 14px" }}>
-                <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>RISK EXPOSURE</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: "#f97316", fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>
-                  {$(deadCost + overstockCost)}
-                </div>
-                <div style={{ fontSize: 10, color: "#888", fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }}>
-                  {$(deadCost)} dead · {$(overstockCost)} overstock
-                </div>
+
+              {/* Hot Movers */}
+              <div style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 6, padding: 12 }}>
+                <div style={{ ...miniLabel, marginBottom: 8, color: "#4ade80" }}>🔥 Hot Movers</div>
+                {topMovers.map((p, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #1a1a1a", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                    <span style={{ color: "#ccc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "60%" }}>{p.p}</span>
+                    <span style={{ color: "#4ade80", fontWeight: 600 }}>▲ {p.tr}%</span>
+                  </div>
+                ))}
+                {topMovers.length === 0 && <div style={{ color: "#444", fontSize: 10 }}>No trending data</div>}
               </div>
-              <div style={{ background: "#111", border: "1px solid #222", borderRadius: 6, padding: "10px 14px" }}>
-                <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>ACTION ITEMS</div>
-                <div style={{ fontSize: 10, color: "#888", fontFamily: "'JetBrains Mono', monospace", marginTop: 6 }}>
-                  <span style={{ color: "#ef4444" }}>{stockouts.length} stockout risk</span> · <span style={{ color: "#f97316" }}>{poItems.length} need reorder</span> · <span style={{ color: "#22c55e" }}>{$(poValue)} PO value</span>
-                </div>
+
+              {/* Decliners */}
+              <div style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 6, padding: 12 }}>
+                <div style={{ ...miniLabel, marginBottom: 8, color: "#ef4444" }}>📉 Declining</div>
+                {decliners.map((p, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #1a1a1a", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                    <span style={{ color: "#ccc", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "60%" }}>{p.p}</span>
+                    <span style={{ color: "#ef4444", fontWeight: 600 }}>▼ {Math.abs(p.tr)}%</span>
+                  </div>
+                ))}
+                {decliners.length === 0 && <div style={{ color: "#444", fontSize: 10 }}>No decliners — solid</div>}
               </div>
             </div>
 
-            {/* Velocity Spark Chart */}
-            <div style={{ background: "#111", border: "1px solid #222", borderRadius: 6, padding: "14px 18px", marginBottom: 16 }}>
-              <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>WEEKLY UNIT VELOCITY</div>
-              <div style={{ display: "flex", gap: 8, maxWidth: 400 }}>
-                {spark(bw4, "4wk ago")}
-                {spark(bw3, "3wk ago")}
-                {spark(bw2, "2wk ago")}
-                {spark(bw1, "This wk")}
-              </div>
-            </div>
-
-            {/* Store Breakdown Grid */}
-            <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>STORE PERFORMANCE</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10, marginBottom: 16 }}>
-              {storeBreakdown.sort((a, b) => b.rev - a.rev).map((sb) => (
-                <div key={sb.s} style={{ background: "#111", border: "1px solid #222", borderRadius: 6, padding: "10px 14px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#e5e5e5" }}>{sb.s}</div>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: sb.tr >= 0 ? "#22c55e" : "#ef4444", fontFamily: "'JetBrains Mono', monospace" }}>
-                      {sb.tr >= 0 ? "▲" : "▼"} {Math.abs(sb.tr)}%
+            {/* Store Performance Heatmap */}
+            <div style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 6, padding: 12, marginBottom: 16 }}>
+              <div style={{ ...miniLabel, marginBottom: 10, color: "#8b5cf6" }}>Store Performance</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 8 }}>
+                {Object.entries(storeBreak).sort((a, b) => b[1].rev - a[1].rev).map(([store, sd]) => {
+                  const sPrior = (sd.w2 + sd.w3 + sd.w4) / 3;
+                  const sTrend = sPrior > 0 ? ((sd.w1 - sPrior) / sPrior * 100) : sd.w1 > 0 ? 100 : 0;
+                  const revPct = bRev > 0 ? (sd.rev / bRev * 100) : 0;
+                  return (
+                    <div key={store} style={miniCard}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#e5e5e5" }}>{store}</span>
+                        <span style={{ fontSize: 9, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace",
+                          color: sTrend >= 20 ? "#22c55e" : sTrend > 0 ? "#4ade80" : sTrend > -20 ? "#f97316" : "#ef4444" }}>
+                          {sTrend > 0 ? "▲" : sTrend < 0 ? "▼" : "—"} {Math.abs(Math.round(sTrend))}%
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
+                        <span style={{ color: "#22c55e" }}>{$(sd.rev)}</span>
+                        <span style={{ color: "#666" }}>{sd.count} SKUs</span>
+                        <span style={{ color: "#3b82f6" }}>{sd.vel.toFixed(1)}/wk</span>
+                      </div>
+                      <div style={bar}><div style={barFill(revPct, "#22c55e44")} /></div>
                     </div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                    <div style={{ color: "#666" }}>Revenue</div><div style={{ textAlign: "right", color: "#22c55e" }}>{$(sb.rev)}</div>
-                    <div style={{ color: "#666" }}>Velocity</div><div style={{ textAlign: "right", color: "#3b82f6" }}>{sb.vel}/wk</div>
-                    <div style={{ color: "#666" }}>Inventory</div><div style={{ textAlign: "right" }}>{$(sb.inv)}</div>
-                    <div style={{ color: "#666" }}>SKUs</div><div style={{ textAlign: "right" }}>{sb.skus} <span style={{ color: sb.dead > 0 ? "#ef4444" : "#666" }}>({sb.dead} dead)</span></div>
-                  </div>
-                </div>
-              ))}
+                  );
+                })}
+              </div>
             </div>
 
             {/* Category Breakdown */}
-            {catBreakdown.length > 1 && <>
-              <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>CATEGORY MIX</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8, marginBottom: 16 }}>
-                {catBreakdown.map((cb) => (
-                  <div key={cb.cat} style={{ background: "#111", border: "1px solid #222", borderRadius: 6, padding: "8px 12px" }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: "#e5e5e5", marginBottom: 4 }}>{cb.cat}</div>
-                    <div style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: "#888" }}>
-                      <span style={{ color: "#22c55e" }}>{$(cb.rev)}</span> · {cb.vel}/wk · {cb.skus} SKUs
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>}
+            <div style={{ background: "#111", border: "1px solid #1a1a1a", borderRadius: 6, padding: 12, marginBottom: 16 }}>
+              <div style={{ ...miniLabel, marginBottom: 10, color: "#f59e0b" }}>Category Breakdown</div>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  {["Category", "Revenue", "Vel/Wk", "SKUs", "Inventory", "Rev Share"].map((h) => (
+                    <th key={h} style={{ ...th, cursor: "default" }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {Object.entries(catBreak).sort((a, b) => b[1].rev - a[1].rev).map(([cat, cd]) => (
+                    <tr key={cat}>
+                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: "#ccc" }}>{cat}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "right", color: "#22c55e" }}>{$(cd.rev)}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "right", color: "#3b82f6" }}>{cd.vel.toFixed(1)}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "right", color: "#666" }}>{cd.count}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "right" }}>{$(cd.inv)}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "right" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+                          <span>{bRev > 0 ? pc(cd.rev / bRev * 100) : "—"}</span>
+                          <div style={{ ...bar, width: 40, display: "inline-block" }}><div style={barFill(bRev > 0 ? cd.rev / bRev * 100 : 0, "#f59e0b")} /></div>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
             {/* Full Product Table */}
-            <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>ALL PRODUCTS</div>
-            <Table rows={bp.sort((a, b) => b.nr - a.nr)} cols={[
+            <div style={{ ...miniLabel, marginBottom: 6, color: "#666" }}>All {bv} Products ({bp.length})</div>
+            <Table rows={[...bp].sort((a, b) => b.nr - a.nr)} cols={[
               { l: "Store", g: (r) => r.s, k: "s" }, { l: "Product", g: (r) => r.p, k: "p" },
               { l: "Cat", g: (r) => r.cat, k: "cat" },
               { l: "Cls", g: (r) => <span className={`c${r.cls}`}>{r.cls}</span>, k: "cls" },
-              { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv", c: (r) => ({ color: r.wv >= 20 ? "#22c55e" : r.wv >= 10 ? "#3b82f6" : r.wv >= 3 ? "#f59e0b" : "#666" }) },
+              { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv" },
               { l: "Trend", g: (r) => Trend(r), nm: 1, k: "tr" },
               { l: "On Hand", g: (r) => N(r.oh), nm: 1, k: "oh" },
               { l: "WOS", g: (r) => r.wos ? r.wos.toFixed(1) : "—", nm: 1, k: "wos", c: (r) => !r.wos ? {} : r.wos < 1 ? { color: "#ef4444", fontWeight: 700 } : r.wos > 8 ? { color: "#f97316" } : {} },
@@ -628,6 +687,7 @@ export default function TAPSApp() {
             ]} />
           </>);
         })()}
+
 
         {tab === 8 && (() => {
           let need = products.filter((p) => p.oq > 0);

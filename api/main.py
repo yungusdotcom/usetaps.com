@@ -130,6 +130,34 @@ def get_locations():
     log.info(f"Loaded {len(retail)} locations")
     return retail
 
+# ─── CATEGORY REFINEMENT ──────────────────────────────────────────────────────
+def refine_category(cat, typ, product_name):
+    """Break out subcategories: Carts, Disposables from Concentrates; Pre Rolls from Flower."""
+    cat_l = (cat or "").lower()
+    typ_l = (typ or "").lower()
+    pn_l = (product_name or "").lower()
+
+    # Pre Rolls: break out from Flower
+    if "pre-roll" in typ_l or "pre roll" in typ_l or "preroll" in typ_l:
+        return "Pre Rolls"
+    if cat_l == "flower" and ("pre-roll" in pn_l or "pre roll" in pn_l or "preroll" in pn_l or "joint" in pn_l or "blunt" in pn_l or "pack" in pn_l and "roll" in pn_l):
+        return "Pre Rolls"
+
+    # Carts: break out from Concentrates
+    if "cartridge" in typ_l or "cart" in typ_l or "vape cart" in typ_l:
+        return "Carts"
+    if cat_l == "concentrates" and ("cart" in pn_l or "cartridge" in pn_l or "pod" in pn_l or "510" in pn_l):
+        return "Carts"
+
+    # Disposables: break out from Concentrates
+    if "disposable" in typ_l:
+        return "Disposables"
+    if cat_l == "concentrates" and ("disposable" in pn_l or "dispos" in pn_l or "all-in-one" in pn_l or "aio" in pn_l):
+        return "Disposables"
+
+    # Return original category if no refinement needed
+    return cat or ""
+
 # ─── INVENTORY ────────────────────────────────────────────────────────────────
 def pull_inventory():
     log.info("Pulling inventory...")
@@ -173,7 +201,7 @@ def pull_inventory():
             sup = sup_map[vid]
 
         inventory.append({"s": sc, "vid": vid, "p": pname,
-            "cat": item.get("category", item.get("customCategoryName", "")),
+            "cat": refine_category(item.get("category", item.get("customCategoryName", "")), item.get("type", ""), pname),
             "b": item.get("brand", ""), "sup": sup,
             "typ": item.get("type", ""), "str": item.get("strainName", "") or "",
             "oh": qty, "uc": round(uc, 2), "up": round(up, 2),
@@ -521,6 +549,21 @@ def get_inventory():
     if not inv: raise HTTPException(500, "Failed to pull inventory")
     return {"items": len(inv), "units": sum(i["oh"] for i in inv),
         "cost": round(sum(i["ic"] for i in inv), 2), "ts": cache["inventory_ts"]}
+
+@app.get("/api/debug-categories")
+def debug_categories():
+    """Show category + type combos to tune refinement logic."""
+    inv = cache.get("inventory")
+    if not inv: return {"error": "No inventory cached"}
+    combos = {}
+    for item in inv:
+        key = f"{item['cat']} | {item.get('typ', '')}"
+        if key not in combos:
+            combos[key] = {"count": 0, "examples": []}
+        combos[key]["count"] += item["oh"]
+        if len(combos[key]["examples"]) < 3:
+            combos[key]["examples"].append(item["p"][:50])
+    return dict(sorted(combos.items(), key=lambda x: -x[1]["count"]))
 
 @app.post("/api/refresh-sales")
 def refresh_sales(background_tasks: BackgroundTasks, days: int = DAYS_DEFAULT):
