@@ -655,20 +655,20 @@ export default function TAPSApp() {
               <div style={{ ...miniLabel, marginBottom: 10, color: "#f59e0b" }}>Category Breakdown</div>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr>
-                  {["Category", "Revenue", "Vel/Wk", "SKUs", "Inventory", "Rev Share"].map((h) => (
-                    <th key={h} style={{ ...th, cursor: "default" }}>{h}</th>
+                  {["Category", "Revenue", "Vel/Wk", "SKUs", "Inventory", "Rev Share"].map((h, i) => (
+                    <th key={h} style={{ ...th, cursor: "default", textAlign: i === 0 ? "left" : "center" }}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
                   {Object.entries(catBreak).sort((a, b) => b[1].rev - a[1].rev).map(([cat, cd]) => (
                     <tr key={cat}>
                       <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", color: "#ccc" }}>{cat}</td>
-                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "right", color: "#22c55e" }}>{$(cd.rev)}</td>
-                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "right", color: "#3b82f6" }}>{cd.vel.toFixed(1)}</td>
-                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "right", color: "#666" }}>{cd.count}</td>
-                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "right" }}>{$(cd.inv)}</td>
-                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "right" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "center", color: "#22c55e" }}>{$(cd.rev)}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "center", color: "#3b82f6" }}>{cd.vel.toFixed(1)}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "center", color: "#666" }}>{cd.count}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "center" }}>{$(cd.inv)}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 10, fontFamily: "'JetBrains Mono', monospace", textAlign: "center" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "center" }}>
                           <span>{bRev > 0 ? pc(cd.rev / bRev * 100) : "—"}</span>
                           <div style={{ ...bar, width: 40, display: "inline-block" }}><div style={barFill(bRev > 0 ? cd.rev / bRev * 100 : 0, "#f59e0b")} /></div>
                         </div>
