@@ -46,29 +46,22 @@ COGS_OVERRIDES = [
     {"brand": "Fade", "cat": "Disposables", "uc": 12.48},
     {"brand": "Retreat", "cat": "Carts", "uc": 10.57},
     {"brand": "Retreat", "cat": "Disposables", "uc": 12.40},
-    {"brand": "Green & Gold", "cat": "FLOWER", "size": "eighth", "uc": 8.63},
-    {"brand": "Pistola", "cat": "FLOWER", "size": "eighth", "uc": 8.63},
-    {"brand": "Hustle & Grow", "cat": "FLOWER", "size": "eighth", "uc": 6.78},
-    {"brand": "H&G", "cat": "FLOWER", "size": "eighth", "uc": 6.78},
-    {"brand": "Haus", "cat": "FLOWER", "size": "eighth", "uc": 6.78},
+    {"brand": "Green & Gold", "cat": "FLOWER", "uc": 8.63},
+    {"brand": "Pistola", "cat": "FLOWER", "uc": 8.63},
+    {"brand": "Hustle & Grow", "cat": "FLOWER", "uc": 6.78},
+    {"brand": "H&G", "cat": "FLOWER", "uc": 6.78},
+    {"brand": "Haus", "cat": "FLOWER", "uc": 6.78},
 ]
 
 
 def get_cogs_override(brand: str, cat: str, product_name: str) -> Optional[float]:
     """Check if a product matches a COGS override. Returns override unit cost or None."""
     brand_l = (brand or "").lower()
-    pn_l = (product_name or "").lower()
     for rule in COGS_OVERRIDES:
         if rule["brand"].lower() not in brand_l:
             continue
         if rule["cat"].lower() != cat.lower():
             continue
-        # If rule has size constraint, check product name
-        if "size" in rule:
-            size = rule["size"].lower()
-            # Match eighth: 3.5g, 1/8, eighth
-            if size == "eighth" and not any(kw in pn_l for kw in ("3.5g", "3.5 g", "1/8", "eighth", "⅛")):
-                continue
         return rule["uc"]
     return None
 
@@ -480,7 +473,7 @@ def pull_sales_all(days: int = DAYS_DEFAULT, incremental: bool = True) -> tuple:
         log.error("No locations for sales pull")
         return [], {}
 
-    end_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    end_date = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
     start_date = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     def pull_one(loc):
@@ -625,7 +618,7 @@ def run_taps(inventory: list, sales: list, store_totals: dict,
 
     stats = {
         "period": f"{(datetime.now(timezone.utc) - timedelta(days=days)).strftime('%b %d')} - "
-                  f"{datetime.now(timezone.utc).strftime('%b %d %Y')}",
+                  f"{(datetime.now(timezone.utc) - timedelta(days=1)).strftime('%b %d %Y')}",
         "source": "Flowhub API (Live)",
         "stores": len(set(p["s"] for p in products)),
         "net_revenue": round(tnr, 2), "gross_sales": round(ttp, 2),
