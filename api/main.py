@@ -38,6 +38,40 @@ CURSOR_TTL = 86400 * 14
 EXCLUDE_PRODUCTS = ["EXIT BAG"]
 EXCLUDE_STORES = ["MBNV", "Smoke & Mirrors", "Cultivation"]
 
+# ─── COGS OVERRIDES ──────────────────────────────────────────────────────────
+# Brand + category/type keyword → override unit cost
+# Applied during inventory pull AND TAPS engine to correct Flowhub COGS
+COGS_OVERRIDES = [
+    {"brand": "Fade", "cat": "Carts", "uc": 10.65},
+    {"brand": "Fade", "cat": "Disposables", "uc": 12.48},
+    {"brand": "Retreat", "cat": "Carts", "uc": 10.57},
+    {"brand": "Retreat", "cat": "Disposables", "uc": 12.40},
+    {"brand": "Green & Gold", "cat": "FLOWER", "size": "eighth", "uc": 8.63},
+    {"brand": "Pistola", "cat": "FLOWER", "size": "eighth", "uc": 8.63},
+    {"brand": "Hustle & Grow", "cat": "FLOWER", "size": "eighth", "uc": 6.78},
+    {"brand": "H&G", "cat": "FLOWER", "size": "eighth", "uc": 6.78},
+    {"brand": "Haus", "cat": "FLOWER", "size": "eighth", "uc": 6.78},
+]
+
+
+def get_cogs_override(brand: str, cat: str, product_name: str) -> Optional[float]:
+    """Check if a product matches a COGS override. Returns override unit cost or None."""
+    brand_l = (brand or "").lower()
+    pn_l = (product_name or "").lower()
+    for rule in COGS_OVERRIDES:
+        if rule["brand"].lower() not in brand_l:
+            continue
+        if rule["cat"].lower() != cat.lower():
+            continue
+        # If rule has size constraint, check product name
+        if "size" in rule:
+            size = rule["size"].lower()
+            # Match eighth: 3.5g, 1/8, eighth
+            if size == "eighth" and not any(kw in pn_l for kw in ("3.5g", "3.5 g", "1/8", "eighth", "⅛")):
+                continue
+        return rule["uc"]
+    return None
+
 CANNABIS_CATS = ["FLOWER", "Pre Rolls", "Concentrates", "Carts", "Disposables",
                  "Edibles", "Infused Flower", "Capsules", "Tinctures", "Topicals"]
 
@@ -291,6 +325,15 @@ def pull_inventory() -> list:
             "ic": round(qty * uc, 2), "ir": round(qty * up, 2),
         })
 
+    # Apply COGS overrides to inventory
+    overrides_applied = 0
+    for inv_item in inventory:
+        override = get_cogs_override(inv_item["b"], inv_item["cat"], inv_item["p"])
+        if override is not None:
+            inv_item["uc"] = override
+            inv_item["ic"] = round(inv_item["oh"] * override, 2)
+            overrides_applied += 1
+
     dt_fetch = time.monotonic() - t0
     t1 = time.monotonic()
     redis_set("taps:inventory", inventory, ttl=INVENTORY_CACHE_TTL)
@@ -299,7 +342,8 @@ def pull_inventory() -> list:
     dt_cache = (time.monotonic() - t1) * 1000
     log.info(f"Inventory: {len(inventory)} items, {sum(i['oh'] for i in inventory):,}u, "
              f"${sum(i['ic'] for i in inventory):,.0f} "
-             f"[fetch={dt_fetch:.1f}s cache={dt_cache:.0f}ms suppliers={len(sup_map)}]")
+             f"[fetch={dt_fetch:.1f}s cache={dt_cache:.0f}ms suppliers={len(sup_map)} "
+             f"cogs_overrides={overrides_applied}]")
     return inventory
 
 
@@ -520,6 +564,7 @@ def run_taps(inventory: list, sales: list, store_totals: dict,
     stores_with_sales = set(e["s"] for e in sales) if sales else set()
 
     products = []
+    cogs_overrides_applied = 0
     for (store, vid), inv in inv_map.items():
         sd = sales_map.get((store, vid))
         sold = sd["q"] if sd else 0
@@ -529,6 +574,12 @@ def run_taps(inventory: list, sales: list, store_totals: dict,
         if sold == 0 and store not in stores_with_sales and vid in vid_vels:
             vel = vid_vels[vid]
             sold = vel * weeks
+
+        # Apply COGS override: recalculate tc_sold using corrected unit cost
+        override_uc = get_cogs_override(inv.get("b", ""), inv.get("cat", ""), inv.get("p", ""))
+        if override_uc is not None and sold > 0:
+            tc_sold = round(sold * override_uc, 2)
+            cogs_overrides_applied += 1
 
         w1 = sd.get("w1", 0) if sd else 0
         w2 = sd.get("w2", 0) if sd else 0
@@ -554,11 +605,21 @@ def run_taps(inventory: list, sales: list, store_totals: dict,
             "vid": vid,
         })
 
-    tnr = sum(s.get("nr", 0) for s in store_totals.values())
-    ttp = sum(s.get("tp", 0) for s in store_totals.values())
-    ttd = sum(s.get("td", 0) for s in store_totals.values())
-    ttc = sum(s.get("tc", 0) for s in store_totals.values())
-    tq = sum(s.get("q", 0) for s in store_totals.values())
+    # Recalculate store totals using overridden COGS
+    store_totals_adj = {}
+    for p in products:
+        sn = p["s"]
+        if sn not in store_totals_adj:
+            st_orig = store_totals.get(sn, {})
+            store_totals_adj[sn] = {"nr": st_orig.get("nr", 0), "tp": st_orig.get("tp", 0),
+                                     "td": st_orig.get("td", 0), "tc": 0, "q": st_orig.get("q", 0)}
+        store_totals_adj[sn]["tc"] += p["cogs"]
+
+    tnr = sum(s.get("nr", 0) for s in store_totals_adj.values())
+    ttp = sum(s.get("tp", 0) for s in store_totals_adj.values())
+    ttd = sum(s.get("td", 0) for s in store_totals_adj.values())
+    ttc = sum(s.get("tc", 0) for s in store_totals_adj.values())
+    tq = sum(s.get("q", 0) for s in store_totals_adj.values())
     inv_ts = redis_get("taps:inventory_ts")
     sales_meta = redis_get("taps:sales_meta")
 
@@ -584,7 +645,7 @@ def run_taps(inventory: list, sales: list, store_totals: dict,
         sp = [p for p in products if p["s"] == sn]
         dead = [p for p in sp if p["wv"] == 0]
         over = [p for p in sp if p["wos"] and p["wos"] > 8 and p["wv"] > 0]
-        st = store_totals.get(sn, {})
+        st = store_totals_adj.get(sn, {})
         ic = sum(p["ic"] for p in sp)
         ss.append({
             "s": sn, "rev": round(st.get("nr", 0)), "cogs": round(st.get("tc", 0)),
@@ -598,7 +659,8 @@ def run_taps(inventory: list, sales: list, store_totals: dict,
 
     result = {"st": stats, "ss": ss, "pd": products}
     dt = (time.monotonic() - t0) * 1000
-    log.info(f"TAPS engine: {len(products)} products, {len(ss)} stores [{dt:.0f}ms]")
+    log.info(f"TAPS engine: {len(products)} products, {len(ss)} stores, "
+             f"{cogs_overrides_applied} COGS overrides [{dt:.0f}ms]")
     return result
 
 
