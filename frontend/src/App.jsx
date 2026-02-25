@@ -475,10 +475,10 @@ export default function TAPSApp() {
 
   // ── DEEP DIVE: BRANDS (reuse existing brand deep dive) ──
   const renderBrandDive = () => {
-    const brandList = [...new Set(products.map((p) => p.b).filter(Boolean))].sort();
+    const brandList = [...new Set(products.filter((p) => CANNABIS_CATS.includes(p.cat)).map((p) => p.b).filter(Boolean))].sort();
     const bv = brandView || brandList[0] || "";
     const bdStore = filters._bdStore || "All";
-    const bpAll = products.filter((p) => p.b === bv);
+    const bpAll = products.filter((p) => p.b === bv && CANNABIS_CATS.includes(p.cat));
     const bp = bdStore === "All" ? bpAll : bpAll.filter((p) => p.s === bdStore);
     const brandStoreList = ["All", ...[...new Set(bpAll.map((p) => p.s))].sort()];
 
