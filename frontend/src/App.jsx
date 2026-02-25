@@ -295,6 +295,7 @@ export default function TAPSApp() {
     const brandData = {};
     products.forEach((p) => {
       if (!p.b) return;
+      if (!CANNABIS_CATS.includes(p.cat)) return;
       if (!brandData[p.b]) brandData[p.b] = { rev: 0, cogs: 0, profit: 0, inv: 0, vel: 0, units: 0, skus: 0, dead: 0, w1: 0, w2: 0, w3: 0, w4: 0 };
       const d = brandData[p.b];
       d.rev += p.nr; d.cogs += p.cogs; d.profit += p.profit; d.inv += p.ic;
