@@ -14,7 +14,7 @@ const TABS = [
   { n: "Power Rankings", i: "♛" }, { n: "Purchase Orders", i: "⬡" },
 ];
 
-const CANNABIS_CATS = ["FLOWER", "Pre Rolls", "Concentrates", "Carts", "Disposables", "Edibles", "Infused Flower", "Capsules", "Tinctures", "Topicals"];
+const CANNABIS_CATS = ["Flower", "Pre Rolls", "Concentrates", "Carts", "Disposables", "Edibles", "Infused Flower", "Capsules", "Tinctures", "Topicals"];
 
 export default function TAPSApp() {
   const [data, setData] = useState(null);

@@ -46,11 +46,11 @@ COGS_OVERRIDES = [
     {"brand": "Fade", "cat": "Disposables", "uc": 12.48},
     {"brand": "Retreat", "cat": "Carts", "uc": 10.57},
     {"brand": "Retreat", "cat": "Disposables", "uc": 12.40},
-    {"brand": "Green & Gold", "cat": "FLOWER", "uc": 8.63},
-    {"brand": "Pistola", "cat": "FLOWER", "uc": 8.63},
-    {"brand": "Hustle & Grow", "cat": "FLOWER", "uc": 6.78},
-    {"brand": "H&G", "cat": "FLOWER", "uc": 6.78},
-    {"brand": "Haus", "cat": "FLOWER", "uc": 6.78},
+    {"brand": "Green & Gold", "cat": "Flower", "uc": 8.63},
+    {"brand": "Pistola", "cat": "Flower", "uc": 8.63},
+    {"brand": "Hustle & Grow", "cat": "Flower", "uc": 6.78},
+    {"brand": "H&G", "cat": "Flower", "uc": 6.78},
+    {"brand": "Haus", "cat": "Flower", "uc": 6.78},
 ]
 
 
@@ -66,7 +66,7 @@ def get_cogs_override(brand: str, cat: str, product_name: str) -> Optional[float
         return rule["uc"]
     return None
 
-CANNABIS_CATS = ["FLOWER", "Pre Rolls", "Concentrates", "Carts", "Disposables",
+CANNABIS_CATS = ["Flower", "Pre Rolls", "Concentrates", "Carts", "Disposables",
                  "Edibles", "Infused Flower", "Capsules", "Tinctures", "Topicals"]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
