@@ -308,37 +308,71 @@ export default function TAPSApp() {
     const totalRev = Object.values(brandData).reduce((a, d) => a + d.rev, 0);
     const totalProfit = Object.values(brandData).reduce((a, d) => a + d.profit, 0);
 
-    // Power Score formula:
-    // Revenue Weight (40%) - share of total revenue
-    // Profit Weight (35%) - share of total profit
-    // Margin Quality (15%) - margin vs 50% benchmark
-    // Momentum (10%) - WoW trend
-    const ranked = Object.entries(brandData).map(([name, d]) => {
+    // Power Score: 0-100 composite
+    // Revenue contribution (35%) — log-scaled share of total revenue
+    // Profit contribution (30%) — share of total profit (can be negative)
+    // Margin quality (15%) — margin % vs 50% benchmark
+    // Momentum (10%) — WoW velocity trend
+    // Efficiency penalty (-10%) — dead SKU ratio drags score down
+    const rawScores = Object.entries(brandData).map(([name, d]) => {
       const margin = d.rev > 0 ? (d.rev - d.cogs) / d.rev * 100 : 0;
       const revShare = totalRev > 0 ? d.rev / totalRev * 100 : 0;
       const profitShare = totalProfit > 0 ? d.profit / totalProfit * 100 : 0;
-      const marginQuality = Math.min(margin / 50, 2) * 100; // Normalized: 50% margin = 100 score
+
+      // Revenue: log-scaled so #1 brand doesn't dominate
+      const revScore = revShare > 0 ? Math.min(Math.log10(revShare + 1) / Math.log10(101) * 100, 100) : 0;
+
+      // Profit: allow negatives to penalize money-losers
+      const profitScore = Math.max(Math.min(profitShare * 5, 100), -50);
+
+      // Margin: 50% = perfect, scale linearly
+      const marginScore = Math.max(Math.min(margin / 50 * 100, 100), 0);
+
+      // Momentum: WoW trend clamped
       const priorAvg = (d.w2 + d.w3 + d.w4) / 3;
-      const momentum = priorAvg > 0 ? ((d.w1 - priorAvg) / priorAvg * 100) : (d.w1 > 0 ? 50 : 0);
-      const momentumScore = Math.max(Math.min(momentum + 50, 100), 0); // Normalize -50..+50 to 0..100
+      const momentum = priorAvg > 0 ? ((d.w1 - priorAvg) / priorAvg * 100) : (d.w1 > 0 ? 25 : -25);
+      const momentumScore = Math.max(Math.min((momentum + 50), 100), 0);
 
-      const powerScore = Math.round(
-        revShare * 0.40 +
-        profitShare * 0.35 +
-        marginQuality * 0.15 +
-        momentumScore * 0.10
-      );
+      // Dead penalty: ratio of dead SKUs to total
+      const deadRatio = d.skus > 0 ? d.dead / d.skus : 0;
+      const deadPenalty = deadRatio * 100; // 0 = no dead, 100 = all dead
 
-      // Grade
-      const grade = powerScore >= 15 ? "S" : powerScore >= 8 ? "A" : powerScore >= 4 ? "B" : powerScore >= 2 ? "C" : "D";
-      const gradeColor = { S: "#22c55e", A: "#4ade80", B: "#3b82f6", C: "#f59e0b", D: "#ef4444" }[grade];
+      const rawScore =
+        revScore * 0.35 +
+        profitScore * 0.30 +
+        marginScore * 0.15 +
+        momentumScore * 0.10 -
+        deadPenalty * 0.10;
 
+      return { name, d, margin, revShare, profitShare, momentum: Math.round(momentum), rawScore };
+    }).filter((b) => b.d.rev > 0 || b.d.inv > 0);
+
+    // Normalize to 0-100 using min/max
+    const scores = rawScores.map((b) => b.rawScore);
+    const minScore = Math.min(...scores);
+    const maxScore = Math.max(...scores);
+    const range = maxScore - minScore || 1;
+
+    const ranked = rawScores.map((b) => {
+      const powerScore = Math.round(((b.rawScore - minScore) / range) * 100);
       return {
-        name, rev: d.rev, profit: d.profit, margin, inv: d.inv, vel: d.vel, skus: d.skus, dead: d.dead,
-        revShare, profitShare, momentum: Math.round(momentum),
-        powerScore, grade, gradeColor, w1: d.w1,
+        name: b.name, rev: b.d.rev, profit: b.d.profit, margin: b.margin,
+        inv: b.d.inv, vel: b.d.vel, skus: b.d.skus, dead: b.d.dead,
+        revShare: b.revShare, profitShare: b.profitShare, momentum: b.momentum,
+        powerScore, w1: b.d.w1,
       };
-    }).filter((b) => b.rev > 0 || b.inv > 0).sort((a, b) => b.powerScore - a.powerScore);
+    }).sort((a, b) => b.powerScore - a.powerScore);
+
+    // Percentile-based grading: S=top 10%, A=next 20%, B=next 30%, C=next 25%, D=bottom 15%
+    const total = ranked.length;
+    ranked.forEach((b, i) => {
+      const pct = i / total;
+      if (pct < 0.10)      { b.grade = "S"; b.gradeColor = "#22c55e"; }
+      else if (pct < 0.30) { b.grade = "A"; b.gradeColor = "#4ade80"; }
+      else if (pct < 0.60) { b.grade = "B"; b.gradeColor = "#3b82f6"; }
+      else if (pct < 0.85) { b.grade = "C"; b.gradeColor = "#f59e0b"; }
+      else                 { b.grade = "D"; b.gradeColor = "#ef4444"; }
+    });
 
     const maxScore = ranked[0]?.powerScore || 1;
 
@@ -351,7 +385,7 @@ export default function TAPSApp() {
       </div>
 
       <div style={{ fontSize: 9, color: "#555", fontFamily: "'JetBrains Mono', monospace", marginBottom: 8 }}>
-        Score = Revenue Share (40%) + Profit Share (35%) + Margin Quality (15%) + Momentum (10%)
+        Score = Revenue (35%) + Profit (30%) + Margin Quality (15%) + Momentum (10%) − Dead SKU Penalty (10%) · Graded by percentile
       </div>
 
       <div style={{ overflowX: "auto", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
