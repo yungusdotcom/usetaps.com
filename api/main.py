@@ -56,11 +56,12 @@ COGS_OVERRIDES = [
 
 def get_cogs_override(brand: str, cat: str, product_name: str) -> Optional[float]:
     """Check if a product matches a COGS override. Returns override unit cost or None."""
-    brand_l = (brand or "").lower()
+    brand_l = (brand or "").strip().lower()
+    cat_l = (cat or "").lower()
     for rule in COGS_OVERRIDES:
-        if rule["brand"].lower() not in brand_l:
+        if rule["brand"].lower() != brand_l:
             continue
-        if rule["cat"].lower() != cat.lower():
+        if rule["cat"].lower() != cat_l:
             continue
         return rule["uc"]
     return None
@@ -839,6 +840,27 @@ def debug_categories():
         if len(combos[key]["examples"]) < 3:
             combos[key]["examples"].append(item["p"][:50])
     return dict(sorted(combos.items(), key=lambda x: -x[1]["count"]))
+
+
+@app.get("/api/debug-brand/{brand}")
+def debug_brand(brand: str):
+    """Show all products for a brand with their cat, type, uc, and COGS override status."""
+    inv = redis_get("taps:inventory")
+    if not inv:
+        return {"error": "No inventory cached"}
+    brand_l = brand.lower()
+    matches = []
+    for item in inv:
+        if brand_l in (item.get("b") or "").lower():
+            override = get_cogs_override(item.get("b", ""), item.get("cat", ""), item.get("p", ""))
+            matches.append({
+                "store": item["s"], "product": item["p"], "brand": item.get("b"),
+                "cat": item["cat"], "type": item.get("typ"), "qty": item["oh"],
+                "uc_flowhub": item["uc"], "uc_override": override,
+                "uc_active": override if override else item["uc"],
+            })
+    matches.sort(key=lambda x: (-x["qty"]))
+    return {"brand": brand, "products": len(matches), "items": matches}
 
 
 @app.get("/api/debug-cursors")
