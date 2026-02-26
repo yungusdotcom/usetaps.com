@@ -222,6 +222,59 @@ export default function TAPSApp() {
     const over = products.filter((p) => p.wos && p.wos > 8 && p.wv > 0);
     const overC = over.reduce((a, p) => a + p.ic, 0);
     const at = (S.cogs * 365 / 31) / S.total_inv_cost;
+
+    // ── Store Efficiency Scores ──
+    const storeScores = SS.map((s) => {
+      const sp = products.filter((p) => p.s === s.s);
+      const totalIC = s.inv_cost || 1;
+      const totalUnits = s.inv_units || 1;
+
+      // Dead Weight (40%): cost ratio of zero-velocity inventory
+      const deadItems = sp.filter((p) => p.wv === 0);
+      const deadCost = deadItems.reduce((a, p) => a + p.ic, 0);
+      const deadRatio = deadCost / totalIC;
+      const deadScore = Math.max(0, 100 - deadRatio * 250); // 0% dead = 100, 40% dead = 0
+
+      // Overstock (30%): excess units beyond par as cost ratio
+      const overItems = sp.filter((p) => p.wos && p.wos > 8 && p.wv > 0);
+      const excessCost = overItems.reduce((a, p) => a + Math.max(p.ic - (p.par * p.uc), 0), 0);
+      const overRatio = excessCost / totalIC;
+      const overScore = Math.max(0, 100 - overRatio * 300); // 0% excess = 100, 33% = 0
+
+      // WOS Balance (30%): % of active SKUs within healthy 1-6 WOS range
+      const active = sp.filter((p) => p.wv > 0);
+      const healthy = active.filter((p) => p.wos && p.wos >= 1 && p.wos <= 6);
+      const balanceScore = active.length > 0 ? (healthy.length / active.length) * 100 : 50;
+
+      const raw = deadScore * 0.40 + overScore * 0.30 + balanceScore * 0.30;
+      const score = Math.round(Math.max(0, Math.min(100, raw)));
+
+      // Grade
+      let grade, gradeColor;
+      if (score >= 85)      { grade = "A"; gradeColor = "#22c55e"; }
+      else if (score >= 70) { grade = "B"; gradeColor = "#3b82f6"; }
+      else if (score >= 55) { grade = "C"; gradeColor = "#f59e0b"; }
+      else                  { grade = "D"; gradeColor = "#ef4444"; }
+
+      // Action items
+      const actions = [];
+      if (deadCost > 1000) actions.push({ text: `${$(deadCost)} dead weight`, color: "#ef4444", type: "dead" });
+      if (excessCost > 1000) actions.push({ text: `${$(excessCost)} overstock`, color: "#f97316", type: "over" });
+      const stockouts = sp.filter((p) => p.wos != null && p.wos < 1 && p.wv >= 3);
+      if (stockouts.length > 0) actions.push({ text: `${stockouts.length} stockout risk`, color: "#ef4444", type: "stockout" });
+
+      return {
+        name: s.s, score, grade, gradeColor, deadCost, deadScore: Math.round(deadScore),
+        excessCost, overScore: Math.round(overScore), balanceScore: Math.round(balanceScore),
+        deadItems: deadItems.length, overItems: overItems.length,
+        healthy: healthy.length, active: active.length, total: sp.length,
+        inv: totalIC, rev: s.rev, actions,
+      };
+    }).sort((a, b) => b.score - a.score);
+
+    const avgScore = storeScores.length > 0 ? Math.round(storeScores.reduce((a, s) => a + s.score, 0) / storeScores.length) : 0;
+    const totalLiability = storeScores.reduce((a, s) => a + s.deadCost + s.excessCost, 0);
+
     return (<>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10, marginBottom: 16 }}>
         <KPI label="Net Revenue" value={$(S.net_revenue)} sub="Post-discount · Validated ✓" color="#22c55e" />
@@ -233,6 +286,109 @@ export default function TAPSApp() {
         <KPI label="Dead Weight" value={$(deadC)} sub={dead.length + " SKUs · 0 sales"} color="#ef4444" />
         <KPI label="Overstock >8wk" value={$(overC)} sub={over.length + " SKUs"} color="#f97316" />
       </div>
+
+      {/* ── INVENTORY EFFICIENCY VISUALIZER ── */}
+      <div style={{ background: "#111", border: "1px solid #222", borderRadius: 8, padding: "16px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          <div>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#e5e5e5", fontFamily: "'JetBrains Mono', monospace" }}>
+              INVENTORY EFFICIENCY
+            </span>
+            <span style={{ fontSize: 9, color: "#555", fontFamily: "'JetBrains Mono', monospace", marginLeft: 10 }}>
+              Dead Weight (40%) · Overstock (30%) · WOS Balance (30%)
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <span style={{ fontSize: 10, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>
+              Fleet Avg: <span style={{ color: avgScore >= 70 ? "#22c55e" : avgScore >= 55 ? "#f59e0b" : "#ef4444", fontWeight: 700, fontSize: 14 }}>{avgScore}</span>
+            </span>
+            <span style={{ fontSize: 10, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>
+              Total Liability: <span style={{ color: "#ef4444", fontWeight: 700 }}>{$(totalLiability)}</span>
+            </span>
+          </div>
+        </div>
+
+        {storeScores.map((s, i) => (
+          <div key={s.name} style={{
+            padding: "10px 0", borderBottom: i < storeScores.length - 1 ? "1px solid #1a1a1a" : "none",
+            display: "grid", gridTemplateColumns: "120px 50px 1fr 200px", gap: 12, alignItems: "center",
+          }}>
+            {/* Store name */}
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 600, color: "#e5e5e5" }}>
+              {s.name}
+            </div>
+
+            {/* Grade badge */}
+            <div>
+              <span style={{
+                background: s.gradeColor + "22", color: s.gradeColor,
+                padding: "3px 10px", borderRadius: 4, fontWeight: 800, fontSize: 13,
+                fontFamily: "'JetBrains Mono', monospace",
+              }}>{s.grade}</span>
+            </div>
+
+            {/* Score bar */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {/* Main efficiency bar */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ flex: 1, height: 16, background: "#1a1a1a", borderRadius: 4, overflow: "hidden", position: "relative" }}>
+                  {/* Score fill */}
+                  <div style={{
+                    width: `${s.score}%`, height: "100%", borderRadius: 4,
+                    background: `linear-gradient(90deg, ${s.gradeColor}88, ${s.gradeColor})`,
+                    transition: "width 0.5s ease",
+                  }} />
+                  {/* 100 target line */}
+                  <div style={{
+                    position: "absolute", right: 0, top: 0, bottom: 0, width: 2,
+                    background: "#22c55e44",
+                  }} />
+                  {/* Score label inside bar */}
+                  <div style={{
+                    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 10, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
+                    color: s.score > 50 ? "#fff" : "#888",
+                  }}>{s.score}</div>
+                </div>
+              </div>
+
+              {/* Component breakdown mini bars */}
+              <div style={{ display: "flex", gap: 6, fontSize: 8, fontFamily: "'JetBrains Mono', monospace" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                  <div style={{ width: 30, height: 3, background: "#1a1a1a", borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: `${s.deadScore}%`, height: "100%", background: s.deadScore >= 70 ? "#22c55e" : s.deadScore >= 40 ? "#f59e0b" : "#ef4444", borderRadius: 2 }} />
+                  </div>
+                  <span style={{ color: "#555" }}>dead</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                  <div style={{ width: 30, height: 3, background: "#1a1a1a", borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: `${s.overScore}%`, height: "100%", background: s.overScore >= 70 ? "#22c55e" : s.overScore >= 40 ? "#f59e0b" : "#ef4444", borderRadius: 2 }} />
+                  </div>
+                  <span style={{ color: "#555" }}>over</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                  <div style={{ width: 30, height: 3, background: "#1a1a1a", borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: `${s.balanceScore}%`, height: "100%", background: s.balanceScore >= 70 ? "#22c55e" : s.balanceScore >= 40 ? "#f59e0b" : "#ef4444", borderRadius: 2 }} />
+                  </div>
+                  <span style={{ color: "#555" }}>bal</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Action items / what's dragging them down */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
+              {s.actions.length > 0 ? s.actions.map((a, ai) => (
+                <span key={ai} style={{ color: a.color }}>→ {a.text}</span>
+              )) : (
+                <span style={{ color: "#22c55e" }}>✓ running clean</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Original store cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 10 }}>
         {SS.map((s) => (
           <div key={s.s} style={{ background: "#111", border: "1px solid #222", borderRadius: 6, padding: "12px 14px" }}>
