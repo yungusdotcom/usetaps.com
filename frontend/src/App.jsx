@@ -622,7 +622,7 @@ export default function TAPSApp() {
         <KPI label="Discounts" value={$(ss.disc || 0)} color="#f59e0b" />
       </div>
       <Table rows={d} cols={[
-        { l: "Product", g: (r) => r.p, k: "p" }, { l: "Brand", g: (r) => r.b, k: "b" }, { l: "Cat", g: (r) => r.cat, k: "cat" },
+        { l: "Brand", g: (r) => r.b, k: "b" }, { l: "Product", g: (r) => r.p, k: "p" }, { l: "Cat", g: (r) => r.cat, k: "cat" },
         { l: "Cls", g: (r) => r.cls, k: "cls" }, { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv" },
         { l: "Trend", g: (r) => Trend(r), nm: 1, k: "tr" },
         { l: "On Hand", g: (r) => N(r.oh), nm: 1, k: "oh" },
@@ -901,7 +901,7 @@ export default function TAPSApp() {
               d.sort((a, b) => (a.wos || 0) - (b.wos || 0));
               return (<>{filterBar()}<Summary items={[{ label: "At Risk", value: d.length + " products", color: "#ef4444" }]} />
               <Table rows={d} cols={[
-                { l: "Store", g: (r) => r.s, k: "s" }, { l: "Product", g: (r) => r.p, k: "p" }, { l: "Cat", g: (r) => r.cat, k: "cat" },
+                { l: "Store", g: (r) => r.s, k: "s" }, { l: "Brand", g: (r) => r.b, k: "b" }, { l: "Product", g: (r) => r.p, k: "p" }, { l: "Cat", g: (r) => r.cat, k: "cat" },
                 { l: "Cls", g: (r) => r.cls, k: "cls" }, { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv" },
                 { l: "On Hand", g: (r) => r.oh, nm: 1, k: "oh", c: (r) => r.oh <= 2 ? { color: "#ef4444", fontWeight: 700 } : {} },
                 { l: "WOS", g: (r) => r.wos?.toFixed(1) || "—", nm: 1, k: "wos", c: () => ({ color: "#ef4444", fontWeight: 700 }) },
@@ -919,7 +919,7 @@ export default function TAPSApp() {
                 { label: "Overstocked", value: d.length, color: "#f97316" }, { label: "Inv Cost", value: $(tc), color: "#f97316" },
                 { label: "Excess Units", value: N(eu) },
               ]} /><Table rows={d} cols={[
-                { l: "Store", g: (r) => r.s, k: "s" }, { l: "Product", g: (r) => r.p, k: "p" }, { l: "Cat", g: (r) => r.cat, k: "cat" },
+                { l: "Store", g: (r) => r.s, k: "s" }, { l: "Brand", g: (r) => r.b, k: "b" }, { l: "Product", g: (r) => r.p, k: "p" }, { l: "Cat", g: (r) => r.cat, k: "cat" },
                 { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv" }, { l: "On Hand", g: (r) => N(r.oh), nm: 1, k: "oh" },
                 { l: "WOS", g: (r) => r.wos?.toFixed(1) || "—", nm: 1, k: "wos", c: () => ({ color: "#f97316", fontWeight: 700 }) },
                 { l: "Par", g: (r) => r.par, nm: 1, k: "par" },
@@ -937,8 +937,8 @@ export default function TAPSApp() {
                 { label: "Trapped Capital", value: $(tc), color: "#ef4444" },
                 { label: "Action", value: "liquidate · transfer · deep discount" },
               ]} /><Table rows={d} cols={[
-                { l: "Store", g: (r) => r.s, k: "s" }, { l: "Product", g: (r) => r.p, k: "p" },
-                { l: "Brand", g: (r) => r.b, k: "b" }, { l: "Cat", g: (r) => r.cat, k: "cat" },
+                { l: "Store", g: (r) => r.s, k: "s" }, { l: "Brand", g: (r) => r.b, k: "b" }, { l: "Product", g: (r) => r.p, k: "p" },
+                { l: "Cat", g: (r) => r.cat, k: "cat" },
                 { l: "Qty", g: (r) => N(r.oh), nm: 1, k: "oh" },
                 { l: "Inv Cost", g: (r) => $(r.ic), nm: 1, k: "ic", c: () => ({ color: "#ef4444", fontWeight: 600 }) },
                 { l: "Unit Cost", g: (r) => "$" + r.uc.toFixed(2), nm: 1, k: "uc" },
