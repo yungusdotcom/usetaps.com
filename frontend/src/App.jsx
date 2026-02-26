@@ -696,16 +696,21 @@ export default function TAPSApp() {
       <div style={{ padding: "16px 24px 10px", borderBottom: "1px solid #222", display: "flex", alignItems: "center", gap: 12 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: "#22c55e", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 2, margin: 0 }}>TAPS</h1>
         <span style={{ background: "#22c55e22", color: "#22c55e", padding: "2px 8px", borderRadius: 3, fontSize: 10, fontFamily: "'JetBrains Mono', monospace", animation: "pulse 2s infinite" }}>● LIVE</span>
+        {S.period && <span style={{ fontSize: 11, color: "#888", fontFamily: "'JetBrains Mono', monospace", border: "1px solid #333", padding: "4px 10px", borderRadius: 4, background: "#111" }}>
+          📅 {S.period}
+        </span>}
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           <button onClick={refreshInventory} disabled={refreshing} style={{ ...btnStyle, whiteSpace: "nowrap" }}>
             {refreshing ? "Refreshing..." : "↻ Inventory"}
           </button>
-          {S.inventory_ts && <span style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>
-            Inv: {new Date(S.inventory_ts).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}
-          </span>}
-          {S.sales_ts && <span style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>
-            Sales: {new Date(S.sales_ts).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}
-          </span>}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+            {S.inventory_ts && <span style={{ fontSize: 9, color: "#555", fontFamily: "'JetBrains Mono', monospace" }}>
+              inv {new Date(S.inventory_ts).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}
+            </span>}
+            {S.sales_ts && <span style={{ fontSize: 9, color: "#555", fontFamily: "'JetBrains Mono', monospace" }}>
+              sales {new Date(S.sales_ts).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}
+            </span>}
+          </div>
         </div>
       </div>
 
