@@ -104,6 +104,9 @@ export default function TAPSApp() {
     return { ...p, par, oq: Math.max(par - p.oh, 0), profit: Math.round((p.nr - p.cogs) * 100) / 100 };
   });
 
+  // Cannabis-only products for all formulas/scores — accessories visible but not weighted
+  const cp = products.filter((p) => CANNABIS_CATS.includes(p.cat));
+
   const getFiltered = (extra) => {
     let d = [...products];
     if (filters.s !== "All") d = d.filter((p) => p.s === filters.s);
@@ -217,17 +220,18 @@ export default function TAPSApp() {
 
   // ── COMMAND CENTER ──
   const renderCC = () => {
-    const dead = products.filter((p) => p.wv === 0);
+    const dead = cp.filter((p) => p.wv === 0);
     const deadC = dead.reduce((a, p) => a + p.ic, 0);
-    const over = products.filter((p) => p.wos && p.wos > 8 && p.wv > 0);
+    const over = cp.filter((p) => p.wos && p.wos > 8 && p.wv > 0);
     const overC = over.reduce((a, p) => a + p.ic, 0);
-    const at = (S.cogs * 365 / 31) / S.total_inv_cost;
+    const cpInvCost = cp.reduce((a, p) => a + p.ic, 0);
+    const at = cpInvCost > 0 ? (S.cogs * 365 / 31) / cpInvCost : 0;
 
     // ── Store Efficiency Scores ──
     const storeScores = SS.map((s) => {
-      const sp = products.filter((p) => p.s === s.s);
-      const totalIC = s.inv_cost || 1;
-      const totalUnits = s.inv_units || 1;
+      const sp = cp.filter((p) => p.s === s.s);
+      const totalIC = sp.reduce((a, p) => a + p.ic, 0) || 1;
+      const totalUnits = sp.reduce((a, p) => a + p.oh, 0) || 1;
 
       // Dead Weight (40%): cost ratio of zero-velocity inventory
       const deadItems = sp.filter((p) => p.wv === 0);
@@ -893,7 +897,7 @@ export default function TAPSApp() {
             </div>
 
             {healthView === "stockouts" && (() => {
-              let d = getFiltered((p) => p.wos != null && p.wos < 2 && p.wv >= 1);
+              let d = getFiltered((p) => CANNABIS_CATS.includes(p.cat) && p.wos != null && p.wos < 2 && p.wv >= 1);
               d.sort((a, b) => (a.wos || 0) - (b.wos || 0));
               return (<>{filterBar()}<Summary items={[{ label: "At Risk", value: d.length + " products", color: "#ef4444" }]} />
               <Table rows={d} cols={[
@@ -908,7 +912,7 @@ export default function TAPSApp() {
             })()}
 
             {healthView === "overstock" && (() => {
-              let d = getFiltered((p) => p.wos && p.wos > 8 && p.wv > 0);
+              let d = getFiltered((p) => CANNABIS_CATS.includes(p.cat) && p.wos && p.wos > 8 && p.wv > 0);
               if (!sortStack.length) d.sort((a, b) => b.ic - a.ic);
               const tc = d.reduce((a, p) => a + p.ic, 0), eu = d.reduce((a, p) => a + Math.max(p.oh - p.par, 0), 0);
               return (<>{filterBar()}<Summary items={[
@@ -992,8 +996,8 @@ export default function TAPSApp() {
             inWindow(m, d, w.start, w.end) || inWindow(la_m, la_d, w.start, w.end)
           );
 
-          // Recalculate par & order qty with PO-specific WOS
-          const poProducts = products.map((p) => {
+          // Recalculate par & order qty with PO-specific WOS — cannabis only
+          const poProducts = cp.map((p) => {
             const par = Math.max(Math.round(p.wv * effectiveWos), 0);
             return { ...p, par, oq: Math.max(par - p.oh, 0) };
           });

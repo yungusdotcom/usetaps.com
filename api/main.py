@@ -659,17 +659,19 @@ def run_taps(inventory: list, sales: list, store_totals: dict,
     ss = []
     for sn in sorted(set(p["s"] for p in products)):
         sp = [p for p in products if p["s"] == sn]
-        dead = [p for p in sp if p["wv"] == 0]
-        over = [p for p in sp if p["wos"] and p["wos"] > 8 and p["wv"] > 0]
+        sp_cannabis = [p for p in sp if p.get("cat") in CANNABIS_CATS]
+        dead = [p for p in sp_cannabis if p["wv"] == 0]
+        over = [p for p in sp_cannabis if p["wos"] and p["wos"] > 8 and p["wv"] > 0]
         st = store_totals_adj.get(sn, {})
         ic = sum(p["ic"] for p in sp)
+        ic_cannabis = sum(p["ic"] for p in sp_cannabis)
         ss.append({
             "s": sn, "rev": round(st.get("nr", 0)), "cogs": round(st.get("tc", 0)),
             "margin": round((st.get("nr", 0) - st.get("tc", 0)) / st["nr"] * 100, 1) if st.get("nr", 0) > 0 else 0,
             "disc": round(st.get("td", 0)), "units": int(st.get("q", 0)),
             "products": len(sp), "inv_cost": round(ic), "inv_units": sum(p["oh"] for p in sp),
             "dead_cost": round(sum(p["ic"] for p in dead)),
-            "dead_pct": round(sum(p["ic"] for p in dead) / ic * 100, 1) if ic > 0 else 0,
+            "dead_pct": round(sum(p["ic"] for p in dead) / ic_cannabis * 100, 1) if ic_cannabis > 0 else 0,
             "over_cost": round(sum(p["ic"] for p in over)),
         })
 
