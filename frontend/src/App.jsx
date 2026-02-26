@@ -386,7 +386,13 @@ export default function TAPSApp() {
                 <td style={{ ...td }}>
                   <span style={{ background: b.gradeColor + "22", color: b.gradeColor, padding: "2px 8px", borderRadius: 3, fontWeight: 800, fontSize: 11 }}>{b.grade}</span>
                 </td>
-                <td style={{ ...td, color: "#e5e5e5", fontWeight: 600, maxWidth: 200 }}>{b.name}</td>
+                <td style={{ ...td, color: "#e5e5e5", fontWeight: 600, maxWidth: 200 }}>
+                  <span onClick={() => { setTab(4); setDiveView("brands"); setBrandView(b.name); setSortStack([]); }}
+                    style={{ cursor: "pointer", borderBottom: "1px dashed #555", transition: "all .15s" }}
+                    onMouseEnter={(e) => { e.target.style.color = "#22c55e"; e.target.style.borderColor = "#22c55e"; }}
+                    onMouseLeave={(e) => { e.target.style.color = "#e5e5e5"; e.target.style.borderColor = "#555"; }}
+                  >{b.name}</span>
+                </td>
                 <td style={{ ...td, textAlign: "right" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
                     <div style={{ width: 60, height: 6, background: "#1a1a1a", borderRadius: 3, overflow: "hidden" }}>
