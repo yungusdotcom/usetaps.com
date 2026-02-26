@@ -682,11 +682,11 @@ export default function TAPSApp() {
       <div style={{ padding: "16px 24px 10px", borderBottom: "1px solid #222", display: "flex", alignItems: "center", gap: 12 }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: "#22c55e", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 2, margin: 0 }}>TAPS</h1>
         <span style={{ background: "#22c55e22", color: "#22c55e", padding: "2px 8px", borderRadius: 3, fontSize: 10, fontFamily: "'JetBrains Mono', monospace", animation: "pulse 2s infinite" }}>● LIVE</span>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={refreshInventory} disabled={refreshing} style={btnStyle}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <button onClick={refreshInventory} disabled={refreshing} style={{ ...btnStyle, whiteSpace: "nowrap" }}>
             {refreshing ? "Refreshing..." : "↻ Inventory"}
           </button>
-          <button onClick={refreshSales} disabled={salesPulling} style={{ ...btnStyle, borderColor: "#f59e0b", color: "#f59e0b" }}>
+          <button onClick={refreshSales} disabled={salesPulling} style={{ ...btnStyle, borderColor: "#f59e0b", color: "#f59e0b", whiteSpace: "nowrap" }}>
             {salesPulling ? "Pulling Sales..." : "↻ Sales (slow)"}
           </button>
           {S.inventory_ts && <span style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>
