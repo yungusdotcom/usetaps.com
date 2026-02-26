@@ -30,7 +30,7 @@ export default function TAPSApp() {
   const [diveView, setDiveView] = useState("stores"); // stores | categories | brands
   const [error, setError] = useState(null);
   const [poStore, setPoStore] = useState("");
-  const [poSupplier, setPoSupplier] = useState("");
+  const [poBrand, setPoBrand] = useState("");
   const [poEdits, setPoEdits] = useState({}); // { product_key: qty_override }
   const [poExporting, setPoExporting] = useState(false);
 
@@ -622,9 +622,7 @@ export default function TAPSApp() {
           </div>
           {needsOrder.length > 0 && (
             <button onClick={() => {
-              const sup = needsOrder[0]?.sup;
-              if (sup) { setTab(6); setPoStore(bdStore !== "All" ? bdStore : ""); setPoSupplier(sup); setPoEdits({}); }
-              else { setTab(6); }
+              setTab(6); setPoStore(bdStore !== "All" ? bdStore : ""); setPoBrand(bv); setPoEdits({});
             }} style={{
               marginTop: 8, width: "100%", padding: "5px 10px", borderRadius: 4, fontSize: 10,
               fontFamily: "'JetBrains Mono', monospace", cursor: "pointer",
@@ -853,30 +851,32 @@ export default function TAPSApp() {
         {/* Purchase Orders */}
         {tab === 6 && (() => {
           // All products that need ordering
-          let need = products.filter((p) => p.oq > 0).map((p) => ({ ...p, sup: p.sup || "Unknown Supplier" }));
+          let need = products.filter((p) => p.oq > 0).map((p) => ({ ...p, sup: p.sup || "Unknown Supplier", b: p.b || "Unknown Brand" }));
           const allStores = [...new Set(need.map((p) => p.s))].sort();
           const activeStore = poStore || (allStores.length > 0 ? allStores[0] : "");
 
           // Filter to selected store
           const storeNeed = activeStore ? need.filter((p) => p.s === activeStore) : need;
 
-          // Group by supplier
-          const supGroups = {};
+          // Group by brand
+          const brandGroups = {};
           storeNeed.forEach((p) => {
-            if (!supGroups[p.sup]) supGroups[p.sup] = { items: [], total: 0, units: 0 };
-            supGroups[p.sup].items.push(p);
-            supGroups[p.sup].total += p.oq * p.uc;
-            supGroups[p.sup].units += p.oq;
+            if (!brandGroups[p.b]) brandGroups[p.b] = { items: [], total: 0, units: 0, suppliers: new Set() };
+            brandGroups[p.b].items.push(p);
+            brandGroups[p.b].total += p.oq * p.uc;
+            brandGroups[p.b].units += p.oq;
+            brandGroups[p.b].suppliers.add(p.sup);
           });
-          const supList = Object.entries(supGroups)
-            .map(([name, g]) => ({ name, ...g }))
-            .sort((a, b) => a.name === "Unknown Supplier" ? 1 : b.name === "Unknown Supplier" ? -1 : b.total - a.total);
+          const brandList = Object.entries(brandGroups)
+            .map(([name, g]) => ({ name, ...g, sup: [...g.suppliers].filter((s) => s !== "Unknown Supplier").join(", ") || "Unknown Supplier" }))
+            .sort((a, b) => b.total - a.total);
 
           const totalVal = storeNeed.reduce((a, p) => a + p.oq * p.uc, 0);
           const totalUnits = storeNeed.reduce((a, p) => a + p.oq, 0);
 
-          // Selected supplier's items
-          const supItems = poSupplier ? (supGroups[poSupplier]?.items || []).sort((a, b) => (b.oq * b.uc) - (a.oq * a.uc)) : [];
+          // Selected brand's items
+          const brandItems = poBrand ? (brandGroups[poBrand]?.items || []).sort((a, b) => (b.oq * b.uc) - (a.oq * a.uc)) : [];
+          const brandSup = poBrand ? (brandGroups[poBrand]?.suppliers ? [...brandGroups[poBrand].suppliers].filter((s) => s !== "Unknown Supplier").join(", ") : "") : "";
 
           // Get effective qty (with edits)
           const getQty = (p) => {
@@ -886,25 +886,25 @@ export default function TAPSApp() {
 
           // Export PO
           const exportPO = async () => {
-            if (!activeStore || !poSupplier || supItems.length === 0) return;
+            if (!activeStore || !poBrand || brandItems.length === 0) return;
             setPoExporting(true);
             try {
-              const items = supItems.map((p) => ({
-                description: `${p.b ? p.b + " — " : ""}${p.p}`,
+              const items = brandItems.map((p) => ({
+                description: p.p,
                 qty: getQty(p),
                 unit_price: p.uc,
               })).filter((i) => i.qty > 0);
               const res = await fetch(`${API_BASE}/api/generate-po`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ store: activeStore, supplier: poSupplier, items }),
+                body: JSON.stringify({ store: activeStore, supplier: brandSup || poBrand, brand: poBrand, items }),
               });
               if (!res.ok) throw new Error("Export failed");
               const blob = await res.blob();
               const url = URL.createObjectURL(blob);
               const a = document.createElement("a");
               a.href = url;
-              a.download = res.headers.get("content-disposition")?.match(/filename="(.+)"/)?.[1] || `PO_${activeStore}_${poSupplier}.xlsx`;
+              a.download = res.headers.get("content-disposition")?.match(/filename="(.+)"/)?.[1] || `PO_${activeStore}_${poBrand}.xlsx`;
               a.click();
               URL.revokeObjectURL(url);
             } catch (e) {
@@ -918,7 +918,7 @@ export default function TAPSApp() {
             {/* KPIs */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10, marginBottom: 16 }}>
               <KPI label="Total PO Value" value={$(totalVal)} sub={N(totalUnits) + " units"} color="#f97316" />
-              <KPI label="Suppliers" value={supList.filter((s) => s.name !== "Unknown Supplier").length} sub={activeStore || "All Stores"} color="#3b82f6" />
+              <KPI label="Brands" value={brandList.length} sub={activeStore || "All Stores"} color="#3b82f6" />
               <KPI label="Line Items" value={storeNeed.length} color="#8b5cf6" />
               <KPI label="WOS Target" value={wos} />
             </div>
@@ -927,7 +927,7 @@ export default function TAPSApp() {
             <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
               <label style={{ ...lbl, marginBottom: 0, marginRight: 4 }}>STORE</label>
               {allStores.map((s) => (
-                <button key={s} onClick={() => { setPoStore(s); setPoSupplier(""); setPoEdits({}); }}
+                <button key={s} onClick={() => { setPoStore(s); setPoBrand(""); setPoEdits({}); }}
                   style={{
                     padding: "6px 14px", borderRadius: 4, fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
                     cursor: "pointer", transition: "all .15s",
@@ -938,33 +938,31 @@ export default function TAPSApp() {
               ))}
             </div>
 
-            {/* Two-panel layout: Supplier list | PO Builder */}
-            <div style={{ display: "grid", gridTemplateColumns: poSupplier ? "320px 1fr" : "1fr", gap: 16 }}>
-              {/* Left: Supplier Cards */}
+            {/* Two-panel layout: Brand list | PO Builder */}
+            <div style={{ display: "grid", gridTemplateColumns: poBrand ? "320px 1fr" : "1fr", gap: 16 }}>
+              {/* Left: Brand Cards */}
               <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "calc(100vh - 340px)", overflowY: "auto" }}>
-                {supList.map((s) => (
-                  <div key={s.name} onClick={() => { setPoSupplier(s.name); setPoEdits({}); }}
+                {brandList.map((b) => (
+                  <div key={b.name} onClick={() => { setPoBrand(b.name); setPoEdits({}); }}
                     style={{
-                      background: s.name === poSupplier ? "#f9731611" : "#111",
-                      border: `1px solid ${s.name === poSupplier ? "#f97316" : "#222"}`,
+                      background: b.name === poBrand ? "#f9731611" : "#111",
+                      border: `1px solid ${b.name === poBrand ? "#f97316" : "#222"}`,
                       borderRadius: 6, padding: "10px 12px", cursor: "pointer", transition: "all .15s",
                     }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{
-                        fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600,
-                        color: s.name === "Unknown Supplier" ? "#666" : "#e5e5e5",
-                        fontStyle: s.name === "Unknown Supplier" ? "italic" : "normal",
-                      }}>{s.name}</span>
+                        fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600, color: "#e5e5e5",
+                      }}>{b.name}</span>
                       <span style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: "#f97316" }}>
-                        {$(s.total)}
+                        {$(b.total)}
                       </span>
                     </div>
                     <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", marginTop: 3 }}>
-                      {s.items.length} items · {N(s.units)} units
+                      {b.items.length} items · {N(b.units)} units{b.sup && b.sup !== "Unknown Supplier" ? ` · ${b.sup}` : ""}
                     </div>
                   </div>
                 ))}
-                {supList.length === 0 && (
+                {brandList.length === 0 && (
                   <div style={{ color: "#666", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", padding: 20, textAlign: "center" }}>
                     No items need ordering for {activeStore}
                   </div>
@@ -972,20 +970,23 @@ export default function TAPSApp() {
               </div>
 
               {/* Right: PO Builder */}
-              {poSupplier && (
+              {poBrand && (
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <div>
                       <span style={{ fontSize: 14, fontWeight: 700, color: "#e5e5e5", fontFamily: "'JetBrains Mono', monospace" }}>
-                        {poSupplier}
+                        {poBrand}
                       </span>
                       <span style={{ fontSize: 10, color: "#666", marginLeft: 8, fontFamily: "'JetBrains Mono', monospace" }}>
                         → {activeStore}
                       </span>
+                      {brandSup && <span style={{ fontSize: 9, color: "#555", marginLeft: 8, fontFamily: "'JetBrains Mono', monospace" }}>
+                        ({brandSup})
+                      </span>}
                     </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: "#22c55e", fontFamily: "'JetBrains Mono', monospace", alignSelf: "center" }}>
-                        {$(supItems.reduce((a, p) => a + getQty(p) * p.uc, 0))}
+                        {$(brandItems.reduce((a, p) => a + getQty(p) * p.uc, 0))}
                       </span>
                       <button onClick={exportPO} disabled={poExporting}
                         style={{
@@ -1007,14 +1008,12 @@ export default function TAPSApp() {
                         ))}
                       </tr></thead>
                       <tbody>
-                        {supItems.map((p, ri) => {
+                        {brandItems.map((p, ri) => {
                           const key = `${p.s}|${p.p}`;
                           const qty = getQty(p);
                           return (
                             <tr key={ri} style={{ background: ri % 2 === 0 ? "transparent" : "#0d0d0d" }}>
-                              <td style={{ ...td, maxWidth: 300 }}>
-                                <span style={{ color: "#888", fontSize: 9 }}>{p.b} </span>{p.p}
-                              </td>
+                              <td style={{ ...td, maxWidth: 300 }}>{p.p}</td>
                               <td style={td}>{p.cat}</td>
                               <td style={{ ...td, textAlign: "right" }}>{p.wv.toFixed(1)}</td>
                               <td style={{ ...td, textAlign: "right" }}>{p.oh}</td>
