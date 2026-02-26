@@ -9,9 +9,9 @@ const N = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).to
 const pc = (n) => n.toFixed(1) + "%";
 
 const TABS = [
-  { n: "Command Center", i: "◉" }, { n: "Revenue", i: "$" }, { n: "Par Levels", i: "◎" },
-  { n: "Inventory Health", i: "⚡" }, { n: "Deep Dive", i: "◈" },
-  { n: "Power Rankings", i: "♛" }, { n: "Purchase Orders", i: "⬡" },
+  { n: "Command Center", i: "◉" }, { n: "Inventory Health", i: "⚡" },
+  { n: "Deep Dive", i: "◈" }, { n: "Power Rankings", i: "♛" },
+  { n: "Purchase Orders", i: "⬡" },
 ];
 
 const CANNABIS_CATS = ["Flower", "Pre Rolls", "Concentrates", "Carts", "Disposables", "Edibles", "Infused Flower", "Capsules", "Tinctures", "Topicals"];
@@ -33,6 +33,7 @@ export default function TAPSApp() {
   const [poBrand, setPoBrand] = useState("");
   const [poEdits, setPoEdits] = useState({}); // { product_key: qty_override }
   const [poExporting, setPoExporting] = useState(false);
+  const [poWos, setPoWos] = useState(null); // null = use global wos
 
   const fetchTaps = useCallback(async (refreshInv = false) => {
     try {
@@ -213,31 +214,6 @@ export default function TAPSApp() {
   );
 
   // ── COLUMN DEFS ──
-  const revCols = [
-    { l: "Store", g: (r) => r.s, k: "s" }, { l: "Product", g: (r) => r.p, k: "p" },
-    { l: "Cat", g: (r) => r.cat, k: "cat" },
-    { l: "Cls", g: (r) => <span className={`c${r.cls}`}>{r.cls}</span>, k: "cls" },
-    { l: "Net Rev", g: (r) => $(r.nr), nm: 1, k: "nr", c: () => ({ color: "#22c55e", fontWeight: 600 }) },
-    { l: "Profit", g: (r) => r.profit > 0 ? $(r.profit) : "—", nm: 1, k: "profit", c: (r) => ({ color: r.profit > 0 ? "#4ade80" : "#666" }) },
-    { l: "Margin%", g: (r) => r.mgn > 0 ? pc(r.mgn) : "—", nm: 1, k: "mgn", c: (r) => ({ color: r.mgn >= 55 ? "#22c55e" : r.mgn >= 45 ? "#f59e0b" : "#ef4444" }) },
-    { l: "COGS", g: (r) => $(r.cogs), nm: 1, k: "cogs" },
-    { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv" },
-    { l: "Trend", g: (r) => Trend(r), nm: 1, k: "tr" },
-    { l: "On Hand", g: (r) => N(r.oh), nm: 1, k: "oh" },
-  ];
-
-  const parCols = [
-    { l: "Store", g: (r) => r.s, k: "s" }, { l: "Product", g: (r) => r.p, k: "p" },
-    { l: "Cat", g: (r) => r.cat, k: "cat" },
-    { l: "Cls", g: (r) => <span className={`c${r.cls}`}>{r.cls}</span>, k: "cls" },
-    { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv", c: (r) => ({ color: r.wv >= 20 ? "#22c55e" : r.wv >= 10 ? "#3b82f6" : r.wv >= 3 ? "#f59e0b" : "#666" }) },
-    { l: "Trend", g: (r) => Trend(r), nm: 1, k: "tr" },
-    { l: "On Hand", g: (r) => N(r.oh), nm: 1, k: "oh" },
-    { l: "WOS", g: (r) => r.wos ? r.wos.toFixed(1) : "—", nm: 1, k: "wos", c: (r) => !r.wos ? {} : r.wos < 1 ? { color: "#ef4444", fontWeight: 700 } : r.wos > 8 ? { color: "#f97316" } : {} },
-    { l: "Par", g: (r) => r.par, nm: 1, k: "par", c: () => ({ color: "#8b5cf6" }) },
-    { l: "Order", g: (r) => r.oq > 0 ? r.oq : "—", nm: 1, k: "oq", c: (r) => r.oq > 0 ? { color: "#f97316", fontWeight: 700 } : { color: "#666" } },
-    { l: "Inv Cost", g: (r) => $(r.ic), nm: 1, k: "ic" },
-  ];
 
   // ── COMMAND CENTER ──
   const renderCC = () => {
@@ -387,7 +363,7 @@ export default function TAPSApp() {
                   <span style={{ background: b.gradeColor + "22", color: b.gradeColor, padding: "2px 8px", borderRadius: 3, fontWeight: 800, fontSize: 11 }}>{b.grade}</span>
                 </td>
                 <td style={{ ...td, color: "#e5e5e5", fontWeight: 600, maxWidth: 200 }}>
-                  <span onClick={() => { setTab(4); setDiveView("brands"); setBrandView(b.name); setSortStack([]); }}
+                  <span onClick={() => { setTab(2); setDiveView("brands"); setBrandView(b.name); setSortStack([]); }}
                     style={{ cursor: "pointer", borderBottom: "1px dashed #555", transition: "all .15s" }}
                     onMouseEnter={(e) => { e.target.style.color = "#22c55e"; e.target.style.borderColor = "#22c55e"; }}
                     onMouseLeave={(e) => { e.target.style.color = "#e5e5e5"; e.target.style.borderColor = "#555"; }}
@@ -628,7 +604,7 @@ export default function TAPSApp() {
           </div>
           {needsOrder.length > 0 && (
             <button onClick={() => {
-              setTab(6); setPoStore(bdStore !== "All" ? bdStore : ""); setPoBrand(bv); setPoEdits({});
+              setTab(4); setPoStore(bdStore !== "All" ? bdStore : ""); setPoBrand(bv); setPoEdits({});
             }} style={{
               marginTop: 8, width: "100%", padding: "5px 10px", borderRadius: 4, fontSize: 10,
               fontFamily: "'JetBrains Mono', monospace", cursor: "pointer",
@@ -751,35 +727,8 @@ export default function TAPSApp() {
       <div style={{ padding: "20px 24px", maxHeight: "calc(100vh - 110px)", overflowY: "auto" }}>
         {tab === 0 && renderCC()}
 
-        {/* Revenue */}
-        {tab === 1 && (() => {
-          let d = getFiltered((p) => p.nr > 0);
-          if (!sortStack.length) d.sort((a, b) => b.nr - a.nr);
-          const tr = d.reduce((a, p) => a + p.nr, 0), tc = d.reduce((a, p) => a + p.cogs, 0), tp = d.reduce((a, p) => a + p.profit, 0);
-          return (<>{filterBar()}<Summary items={[
-            { label: "Products", value: d.length }, { label: "Net Revenue", value: $(tr), color: "#22c55e" },
-            { label: "Profit", value: $(tp), color: "#4ade80" },
-            { label: "COGS", value: $(tc) }, { label: "Margin", value: pc(tr > 0 ? (tr - tc) / tr * 100 : 0), color: "#22c55e" },
-          ]} /><Table rows={d} cols={revCols} /></>);
-        })()}
-
-        {/* Par Levels */}
-        {tab === 2 && (() => {
-          let d = getFiltered((p) => p.wv > 0);
-          if (!sortStack.length) d.sort((a, b) => b.wv - a.wv);
-          return (<>{filterBar(
-            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-              <label style={lbl}>WOS Target</label>
-              <select style={{ ...sel, color: "#22c55e" }} value={wos} onChange={(e) => setWos(parseFloat(e.target.value))}>
-                {[2, 2.5, 3, 3.5, 4].map((w) => <option key={w} value={w}>{w}</option>)}
-              </select>
-            </div>
-          )}<Summary items={[{ label: "Products", value: d.length }, { label: "Inv", value: $(d.reduce((a, p) => a + p.ic, 0)) }]} />
-          <Table rows={d} cols={parCols} /></>);
-        })()}
-
         {/* Inventory Health — consolidated */}
-        {tab === 3 && (() => {
+        {tab === 1 && (() => {
           return (<>
             <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
               <SubTab label="⚠ Stockouts" active={healthView === "stockouts"} onClick={() => { setHealthView("stockouts"); setSortStack([]); }} color="#ef4444" />
@@ -840,7 +789,7 @@ export default function TAPSApp() {
         })()}
 
         {/* Deep Dive */}
-        {tab === 4 && (<>
+        {tab === 2 && (<>
           <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
             <SubTab label="◫ Stores" active={diveView === "stores"} onClick={() => { setDiveView("stores"); setSortStack([]); }} />
             <SubTab label="◉ Categories" active={diveView === "categories"} onClick={() => { setDiveView("categories"); setSortStack([]); }} />
@@ -852,12 +801,49 @@ export default function TAPSApp() {
         </>)}
 
         {/* Power Rankings */}
-        {tab === 5 && renderPowerRankings()}
+        {tab === 3 && renderPowerRankings()}
 
         {/* Purchase Orders */}
-        {tab === 6 && (() => {
+        {tab === 4 && (() => {
+          // PO-specific WOS (falls back to global)
+          const effectiveWos = poWos !== null ? poWos : wos;
+
+          // Holiday awareness — hardcoded calendar
+          const BUSY_WINDOWS = [
+            { label: "4/20 Week", start: [4, 14], end: [4, 21], wos: 4.5 },
+            { label: "Memorial Day", start: [5, 20], end: [5, 27], wos: 3.5 },
+            { label: "Independence Day", start: [6, 28], end: [7, 5], wos: 3.5 },
+            { label: "Labor Day", start: [8, 28], end: [9, 4], wos: 3.5 },
+            { label: "Halloween Week", start: [10, 25], end: [11, 1], wos: 3.5 },
+            { label: "Thanksgiving", start: [11, 20], end: [11, 28], wos: 4.0 },
+            { label: "Holiday / NYE", start: [12, 15], end: [1, 3], wos: 4.5 },
+          ];
+
+          const now = new Date();
+          const m = now.getMonth() + 1, d = now.getDate();
+          const lookAhead = new Date(now.getTime() + 14 * 86400000);
+          const la_m = lookAhead.getMonth() + 1, la_d = lookAhead.getDate();
+
+          const inWindow = (month, day, s, e) => {
+            const v = month * 100 + day;
+            const sv = s[0] * 100 + s[1];
+            const ev = e[0] * 100 + e[1];
+            if (sv <= ev) return v >= sv && v <= ev;
+            return v >= sv || v <= ev; // wraps around year (NYE)
+          };
+
+          const activeHoliday = BUSY_WINDOWS.find((w) =>
+            inWindow(m, d, w.start, w.end) || inWindow(la_m, la_d, w.start, w.end)
+          );
+
+          // Recalculate par & order qty with PO-specific WOS
+          const poProducts = products.map((p) => {
+            const par = Math.max(Math.round(p.wv * effectiveWos), 0);
+            return { ...p, par, oq: Math.max(par - p.oh, 0) };
+          });
+
           // All products that need ordering
-          let need = products.filter((p) => p.oq > 0).map((p) => ({ ...p, sup: p.sup || "Unknown Supplier", b: p.b || "Unknown Brand" }));
+          let need = poProducts.filter((p) => p.oq > 0).map((p) => ({ ...p, sup: p.sup || "Unknown Supplier", b: p.b || "Unknown Brand" }));
           const allStores = [...new Set(need.map((p) => p.s))].sort();
           const activeStore = poStore || (allStores.length > 0 ? allStores[0] : "");
 
@@ -921,12 +907,62 @@ export default function TAPSApp() {
           };
 
           return (<>
+            {/* Holiday Alert */}
+            {activeHoliday && poWos === null && (
+              <div style={{
+                background: "#f9731611", border: "1px solid #f9731644", borderRadius: 6,
+                padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center",
+                justifyContent: "space-between", fontFamily: "'JetBrains Mono', monospace",
+              }}>
+                <div>
+                  <span style={{ fontSize: 11, color: "#f97316", fontWeight: 700 }}>🔥 {activeHoliday.label}</span>
+                  <span style={{ fontSize: 10, color: "#888", marginLeft: 8 }}>
+                    approaching — consider stocking up to {activeHoliday.wos} WOS
+                  </span>
+                </div>
+                <button onClick={() => { setPoWos(activeHoliday.wos); setPoEdits({}); }}
+                  style={{
+                    background: "#f9731622", color: "#f97316", border: "1px solid #f97316",
+                    padding: "5px 12px", borderRadius: 4, cursor: "pointer",
+                    fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700,
+                  }}>Apply {activeHoliday.wos} WOS</button>
+              </div>
+            )}
+
             {/* KPIs */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10, marginBottom: 16 }}>
               <KPI label="Total PO Value" value={$(totalVal)} sub={N(totalUnits) + " units"} color="#f97316" />
               <KPI label="Brands" value={brandList.length} sub={activeStore || "All Stores"} color="#3b82f6" />
               <KPI label="Line Items" value={storeNeed.length} color="#8b5cf6" />
-              <KPI label="WOS Target" value={wos} />
+              <div style={{ background: "#111", border: "1px solid #222", borderRadius: 6, padding: "12px 14px" }}>
+                <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>WOS TARGET</div>
+                <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                  {[
+                    { v: null, l: `${wos} std` },
+                    { v: 3.0, l: "3.0" },
+                    { v: 3.5, l: "3.5" },
+                    { v: 4.0, l: "4.0" },
+                    { v: 4.5, l: "4.5" },
+                    { v: 5.0, l: "5.0" },
+                  ].map((opt) => {
+                    const active = opt.v === poWos;
+                    return (
+                      <button key={opt.l} onClick={() => { setPoWos(opt.v); setPoEdits({}); }}
+                        style={{
+                          padding: "4px 8px", borderRadius: 3, fontSize: 10,
+                          fontFamily: "'JetBrains Mono', monospace", fontWeight: active ? 700 : 400,
+                          cursor: "pointer", transition: "all .15s",
+                          background: active ? "#f9731622" : "transparent",
+                          color: active ? "#f97316" : "#666",
+                          border: `1px solid ${active ? "#f97316" : "#333"}`,
+                        }}>{opt.l}</button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginTop: 4, color: poWos !== null ? "#f97316" : "#e5e5e5" }}>
+                  {effectiveWos}{poWos !== null && <span style={{ fontSize: 9, color: "#888", marginLeft: 6 }}>override</span>}
+                </div>
+              </div>
             </div>
 
             {/* Store Selector */}
