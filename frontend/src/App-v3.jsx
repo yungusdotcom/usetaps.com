@@ -56,15 +56,13 @@ export default function TAPSApp() {
     try {
       await fetch(`${API_BASE}/api/refresh-sales`, { method: "POST" });
       pollRef.current = setInterval(async () => {
-        try {
-          const r = await fetch(`${API_BASE}/api/sales-status`);
-          const d = await r.json();
-          if (!d.rebuild_running) {
-            clearInterval(pollRef.current);
-            setSalesPulling(false);
-            fetchTaps();
-          }
-        } catch (e) {}
+        const r = await fetch(`${API_BASE}/api/sales-status`);
+        const d = await r.json();
+        if (!d.pulling) {
+          clearInterval(pollRef.current);
+          setSalesPulling(false);
+          fetchTaps();
+        }
       }, 5000);
     } catch (e) { setSalesPulling(false); }
   };
