@@ -783,6 +783,26 @@ def health():
 def get_taps(wos: float = WOS_DEFAULT, days: int = DAYS_DEFAULT,
              refresh_inventory: bool = False, background_tasks: BackgroundTasks = None):
     """Stale-while-revalidate: Redis-only reads. Background rebuild on miss."""
+
+    # ── REFRESH INVENTORY: pull fresh from Flowhub, re-run engine ──
+    if refresh_inventory:
+        log.info("refresh_inventory=true → pulling fresh inventory from Flowhub")
+        try:
+            fresh_inv = pull_inventory()
+            if fresh_inv:
+                sales = redis_get("taps:sales")
+                store_totals = redis_get("taps:sales_store_totals")
+                if sales:
+                    result = run_taps(fresh_inv, sales, store_totals or {}, wos, days)
+                    redis_set("taps:dashboard", result, ttl=TAPS_CACHE_TTL)
+                    log.info(f"refresh_inventory complete — {len(fresh_inv)} items, dashboard rebuilt")
+                    return result
+                else:
+                    log.warning("refresh_inventory: no cached sales — returning inventory-only update")
+        except Exception as e:
+            log.error(f"refresh_inventory failed: {e}")
+            # Fall through to cached data
+
     cached = redis_get("taps:dashboard")
     if cached:
         if wos != WOS_DEFAULT:
