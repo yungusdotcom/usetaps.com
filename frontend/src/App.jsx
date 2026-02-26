@@ -29,6 +29,10 @@ export default function TAPSApp() {
   const [healthView, setHealthView] = useState("stockouts"); // stockouts | overstock | dead
   const [diveView, setDiveView] = useState("stores"); // stores | categories | brands
   const [error, setError] = useState(null);
+  const [poStore, setPoStore] = useState("");
+  const [poSupplier, setPoSupplier] = useState("");
+  const [poEdits, setPoEdits] = useState({}); // { product_key: qty_override }
+  const [poExporting, setPoExporting] = useState(false);
 
   const fetchTaps = useCallback(async (refreshInv = false) => {
     try {
@@ -616,6 +620,17 @@ export default function TAPSApp() {
             <div><span style={{ color: "#ef4444" }}>{stockout.length}</span> stockout risk</div>
             <div><span style={{ color: "#f97316" }}>{needsOrder.length}</span> need reorder ({$(orderVal)})</div>
           </div>
+          {needsOrder.length > 0 && (
+            <button onClick={() => {
+              const sup = needsOrder[0]?.sup;
+              if (sup) { setTab(6); setPoStore(bdStore !== "All" ? bdStore : ""); setPoSupplier(sup); setPoEdits({}); }
+              else { setTab(6); }
+            }} style={{
+              marginTop: 8, width: "100%", padding: "5px 10px", borderRadius: 4, fontSize: 10,
+              fontFamily: "'JetBrains Mono', monospace", cursor: "pointer",
+              background: "#f9731622", color: "#f97316", border: "1px solid #f97316",
+            }}>⬡ Generate PO</button>
+          )}
         </div>
       </div>
 
@@ -837,47 +852,198 @@ export default function TAPSApp() {
 
         {/* Purchase Orders */}
         {tab === 6 && (() => {
-          let need = products.filter((p) => p.oq > 0);
-          need = need.map((p) => ({ ...p, sup: p.sup || "Unknown Supplier" }));
-          need.sort((a, b) => {
-            const aUnk = a.sup === "Unknown Supplier" ? 1 : 0;
-            const bUnk = b.sup === "Unknown Supplier" ? 1 : 0;
-            if (aUnk !== bUnk) return aUnk - bUnk;
-            if (a.sup !== b.sup) return a.sup < b.sup ? -1 : 1;
-            return (b.oq * b.uc) - (a.oq * a.uc);
+          // All products that need ordering
+          let need = products.filter((p) => p.oq > 0).map((p) => ({ ...p, sup: p.sup || "Unknown Supplier" }));
+          const allStores = [...new Set(need.map((p) => p.s))].sort();
+          const activeStore = poStore || (allStores.length > 0 ? allStores[0] : "");
+
+          // Filter to selected store
+          const storeNeed = activeStore ? need.filter((p) => p.s === activeStore) : need;
+
+          // Group by supplier
+          const supGroups = {};
+          storeNeed.forEach((p) => {
+            if (!supGroups[p.sup]) supGroups[p.sup] = { items: [], total: 0, units: 0 };
+            supGroups[p.sup].items.push(p);
+            supGroups[p.sup].total += p.oq * p.uc;
+            supGroups[p.sup].units += p.oq;
           });
-          if (filters.s !== "All") need = need.filter((p) => p.s === filters.s);
-          if (filters.c !== "All") need = need.filter((p) => p.cat === filters.c);
-          if (filters.b !== "All") need = need.filter((p) => p.b === filters.b);
-          if (filters.q) need = need.filter((p) => (p.p + p.b + p.sup).toLowerCase().includes(filters.q.toLowerCase()));
-          const tv = need.reduce((a, p) => a + p.oq * p.uc, 0), tu = need.reduce((a, p) => a + p.oq, 0);
-          const supList = [...new Set(need.map((p) => p.sup))];
-          const poSup = filters._poSup || "All";
-          const filtered = poSup === "All" ? need : need.filter((p) => p.sup === poSup);
-          const supOptions = ["All", ...supList.filter((s) => s !== "Unknown Supplier").sort(), ...(supList.includes("Unknown Supplier") ? ["Unknown Supplier"] : [])];
+          const supList = Object.entries(supGroups)
+            .map(([name, g]) => ({ name, ...g }))
+            .sort((a, b) => a.name === "Unknown Supplier" ? 1 : b.name === "Unknown Supplier" ? -1 : b.total - a.total);
+
+          const totalVal = storeNeed.reduce((a, p) => a + p.oq * p.uc, 0);
+          const totalUnits = storeNeed.reduce((a, p) => a + p.oq, 0);
+
+          // Selected supplier's items
+          const supItems = poSupplier ? (supGroups[poSupplier]?.items || []).sort((a, b) => (b.oq * b.uc) - (a.oq * a.uc)) : [];
+
+          // Get effective qty (with edits)
+          const getQty = (p) => {
+            const key = `${p.s}|${p.p}`;
+            return poEdits[key] !== undefined ? poEdits[key] : p.oq;
+          };
+
+          // Export PO
+          const exportPO = async () => {
+            if (!activeStore || !poSupplier || supItems.length === 0) return;
+            setPoExporting(true);
+            try {
+              const items = supItems.map((p) => ({
+                description: `${p.b ? p.b + " — " : ""}${p.p}`,
+                qty: getQty(p),
+                unit_price: p.uc,
+              })).filter((i) => i.qty > 0);
+              const res = await fetch(`${API_BASE}/api/generate-po`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ store: activeStore, supplier: poSupplier, items }),
+              });
+              if (!res.ok) throw new Error("Export failed");
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = res.headers.get("content-disposition")?.match(/filename="(.+)"/)?.[1] || `PO_${activeStore}_${poSupplier}.xlsx`;
+              a.click();
+              URL.revokeObjectURL(url);
+            } catch (e) {
+              alert("PO export failed: " + e.message);
+            } finally {
+              setPoExporting(false);
+            }
+          };
+
           return (<>
+            {/* KPIs */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10, marginBottom: 16 }}>
-              <KPI label="PO Value" value={$(tv)} sub={N(tu) + " units"} color="#f97316" />
-              <KPI label="Line Items" value={need.length} color="#3b82f6" />
-              <KPI label="Suppliers" value={supList.length} />
-              <KPI label="WOS Target" value={wos} color="#8b5cf6" />
+              <KPI label="Total PO Value" value={$(totalVal)} sub={N(totalUnits) + " units"} color="#f97316" />
+              <KPI label="Suppliers" value={supList.filter((s) => s.name !== "Unknown Supplier").length} sub={activeStore || "All Stores"} color="#3b82f6" />
+              <KPI label="Line Items" value={storeNeed.length} color="#8b5cf6" />
+              <KPI label="WOS Target" value={wos} />
             </div>
-            <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-              <div><label style={lbl}>Supplier</label><select style={sel} value={poSup} onChange={(e) => setFilters((f) => ({ ...f, _poSup: e.target.value }))}>{supOptions.map((s) => <option key={s}>{s}</option>)}</select></div>
-              <div><label style={lbl}>Store</label><select style={sel} value={filters.s} onChange={(e) => setFilters((f) => ({ ...f, s: e.target.value }))}>{stores.map((s) => <option key={s}>{s}</option>)}</select></div>
-              <div><label style={lbl}>Category</label><select style={sel} value={filters.c} onChange={(e) => setFilters((f) => ({ ...f, c: e.target.value }))}>{cats.map((c) => <option key={c}>{c}</option>)}</select></div>
-              <div><label style={lbl}>Search</label><input style={{ ...sel, width: 200 }} placeholder="Product, brand, or supplier..." value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} /></div>
+
+            {/* Store Selector */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center", flexWrap: "wrap" }}>
+              <label style={{ ...lbl, marginBottom: 0, marginRight: 4 }}>STORE</label>
+              {allStores.map((s) => (
+                <button key={s} onClick={() => { setPoStore(s); setPoSupplier(""); setPoEdits({}); }}
+                  style={{
+                    padding: "6px 14px", borderRadius: 4, fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+                    cursor: "pointer", transition: "all .15s",
+                    background: s === activeStore ? "#f9731622" : "#111",
+                    color: s === activeStore ? "#f97316" : "#666",
+                    border: `1px solid ${s === activeStore ? "#f97316" : "#222"}`,
+                  }}>{s}</button>
+              ))}
             </div>
-            <Table rows={filtered} cols={[
-              { l: "Supplier", g: (r) => r.sup, k: "sup", c: (r) => r.sup === "Unknown Supplier" ? { color: "#666", fontStyle: "italic" } : {} },
-              { l: "Store", g: (r) => r.s, k: "s" }, { l: "Product", g: (r) => r.p, k: "p" },
-              { l: "Cat", g: (r) => r.cat, k: "cat" },
-              { l: "Cls", g: (r) => r.cls, k: "cls" }, { l: "Vel/Wk", g: (r) => r.wv.toFixed(1), nm: 1, k: "wv" },
-              { l: "On Hand", g: (r) => r.oh, nm: 1, k: "oh" },
-              { l: "Par", g: (r) => r.par, nm: 1, k: "par", c: () => ({ color: "#8b5cf6" }) },
-              { l: "Order", g: (r) => r.oq, nm: 1, k: "oq", c: () => ({ color: "#f97316", fontWeight: 700 }) },
-              { l: "Line $", g: (r) => $(r.oq * r.uc), nm: 1, c: () => ({ color: "#22c55e" }) },
-            ]} />
+
+            {/* Two-panel layout: Supplier list | PO Builder */}
+            <div style={{ display: "grid", gridTemplateColumns: poSupplier ? "320px 1fr" : "1fr", gap: 16 }}>
+              {/* Left: Supplier Cards */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: "calc(100vh - 340px)", overflowY: "auto" }}>
+                {supList.map((s) => (
+                  <div key={s.name} onClick={() => { setPoSupplier(s.name); setPoEdits({}); }}
+                    style={{
+                      background: s.name === poSupplier ? "#f9731611" : "#111",
+                      border: `1px solid ${s.name === poSupplier ? "#f97316" : "#222"}`,
+                      borderRadius: 6, padding: "10px 12px", cursor: "pointer", transition: "all .15s",
+                    }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{
+                        fontSize: 11, fontFamily: "'JetBrains Mono', monospace", fontWeight: 600,
+                        color: s.name === "Unknown Supplier" ? "#666" : "#e5e5e5",
+                        fontStyle: s.name === "Unknown Supplier" ? "italic" : "normal",
+                      }}>{s.name}</span>
+                      <span style={{ fontSize: 13, fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, color: "#f97316" }}>
+                        {$(s.total)}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", marginTop: 3 }}>
+                      {s.items.length} items · {N(s.units)} units
+                    </div>
+                  </div>
+                ))}
+                {supList.length === 0 && (
+                  <div style={{ color: "#666", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", padding: 20, textAlign: "center" }}>
+                    No items need ordering for {activeStore}
+                  </div>
+                )}
+              </div>
+
+              {/* Right: PO Builder */}
+              {poSupplier && (
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <div>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: "#e5e5e5", fontFamily: "'JetBrains Mono', monospace" }}>
+                        {poSupplier}
+                      </span>
+                      <span style={{ fontSize: 10, color: "#666", marginLeft: 8, fontFamily: "'JetBrains Mono', monospace" }}>
+                        → {activeStore}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#22c55e", fontFamily: "'JetBrains Mono', monospace", alignSelf: "center" }}>
+                        {$(supItems.reduce((a, p) => a + getQty(p) * p.uc, 0))}
+                      </span>
+                      <button onClick={exportPO} disabled={poExporting}
+                        style={{
+                          background: "#f9731622", color: "#f97316", border: "1px solid #f97316",
+                          padding: "6px 16px", borderRadius: 4, cursor: "pointer",
+                          fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 700,
+                        }}>
+                        {poExporting ? "Generating..." : "⬡ Export PO"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Line items table */}
+                  <div style={{ overflowX: "auto", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead><tr>
+                        {["Product", "Cat", "Vel/Wk", "On Hand", "Par", "Order Qty", "Unit $", "Line $"].map((h, i) => (
+                          <th key={i} style={{ ...th, textAlign: i >= 2 ? "right" : "left" }}>{h}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {supItems.map((p, ri) => {
+                          const key = `${p.s}|${p.p}`;
+                          const qty = getQty(p);
+                          return (
+                            <tr key={ri} style={{ background: ri % 2 === 0 ? "transparent" : "#0d0d0d" }}>
+                              <td style={{ ...td, maxWidth: 300 }}>
+                                <span style={{ color: "#888", fontSize: 9 }}>{p.b} </span>{p.p}
+                              </td>
+                              <td style={td}>{p.cat}</td>
+                              <td style={{ ...td, textAlign: "right" }}>{p.wv.toFixed(1)}</td>
+                              <td style={{ ...td, textAlign: "right" }}>{p.oh}</td>
+                              <td style={{ ...td, textAlign: "right", color: "#8b5cf6" }}>{p.par}</td>
+                              <td style={{ ...td, textAlign: "right" }}>
+                                <input type="number" min="0"
+                                  value={qty}
+                                  onChange={(e) => setPoEdits((prev) => ({ ...prev, [key]: Math.max(0, parseInt(e.target.value) || 0) }))}
+                                  style={{
+                                    width: 56, background: poEdits[key] !== undefined ? "#f9731622" : "#1a1a1a",
+                                    border: `1px solid ${poEdits[key] !== undefined ? "#f97316" : "#333"}`,
+                                    color: "#f97316", fontWeight: 700, textAlign: "right",
+                                    padding: "3px 6px", borderRadius: 3, fontFamily: "'JetBrains Mono', monospace", fontSize: 10,
+                                  }}
+                                />
+                              </td>
+                              <td style={{ ...td, textAlign: "right" }}>{$(p.uc)}</td>
+                              <td style={{ ...td, textAlign: "right", color: "#22c55e", fontWeight: 600 }}>
+                                {$(qty * p.uc)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
           </>);
         })()}
       </div>

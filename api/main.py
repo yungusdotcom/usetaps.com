@@ -19,6 +19,7 @@ import redis
 import requests
 from fastapi import FastAPI, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 
 # ─── CONFIG ──────────────────────────────────────────────────────────────────
 
@@ -928,6 +929,359 @@ def debug_cursors():
                 age = cursor[:10] if cursor else None
         cursors[loc["_clean"]] = {"loc_id": loc_id, "cursor": cursor, "age": age}
     return cursors
+
+
+# ─── STORE INFO (for PO generation) ──────────────────────────────────────────
+
+STORE_INFO = {
+    "Cactus": {
+        "full": "Thrive Cannabis Marketplace - CACTUS",
+        "license": "RD329 / 14194022211467850983",
+        "address": "3698 W. Cactus Ave.\nSuite 107 & 109\nLas Vegas, NV 89141",
+        "code": "CACT",
+        "po_prefix": "RD329",
+    },
+    "Cheyenne": {
+        "full": "Thrive Cannabis Marketplace - CHEYENNE",
+        "license": "RD329 / 14194022211467850983",
+        "address": "2755 W. Cheyenne Ave.\nNorth Las Vegas, NV 89032",
+        "code": "CHEY",
+        "po_prefix": "RD329",
+    },
+    "Jackpot": {
+        "full": "Thrive Cannabis Marketplace - JACKPOT",
+        "license": "RD267 / 04054268305722414317",
+        "address": "1868 Royal Drive\nJackpot, NV 89825",
+        "code": "JACK",
+        "po_prefix": "RD267",
+        "ship_note": "SHIPMENT TO CHEYENNE:\n2755 W. Cheyenne Ave.\nNorth Las Vegas, NV 89032",
+    },
+    "Main": {
+        "full": "Thrive Cannabis Marketplace - MAIN ST.",
+        "license": "RD264 / 30384137740970358778",
+        "address": "1317 S. Main St.\nLas Vegas, NV 89104",
+        "code": "MAIN",
+        "po_prefix": "RD264",
+    },
+    "Reno": {
+        "full": "Thrive Cannabis Marketplace - RENO",
+        "license": "RD265 / 85577035657658637557",
+        "address": "7300 S. Virginia St.\nSuite B\nReno, NV 89511",
+        "code": "RENO",
+        "po_prefix": "RD265",
+    },
+    "Sahara": {
+        "full": "Thrive Cannabis Marketplace - SAHARA",
+        "license": "RD329 / 14194022211467850983",
+        "address": "4800 W. Sahara Ave.\nLas Vegas, NV 89102",
+        "code": "SAHA",
+        "po_prefix": "RD329",
+    },
+    "Sammy": {
+        "full": "Thrive Cannabis Marketplace - SAMMY DAVIS",
+        "license": "RD263 / 4005104995800309174",
+        "address": "2975 Sammy Davis Jr. Drive\nLas Vegas, NV 89109",
+        "code": "SDJR",
+        "po_prefix": "RD263",
+    },
+}
+
+PO_LEGAL = (
+    "Invoices shall be rendered upon delivery of goods and shall contain the purchase order number, "
+    "item number, description of goods, quantities, unit prices, date rendered and total purchase price. "
+    "Each delivery shall be accompanied by certified lab results and soil amendment information or the "
+    "product will be rejected. Each invoice must refer to one, and only one, purchase order.\n\n"
+    "Seller shall schedule an appointment with buyer's accounts payable department to arrange for payment "
+    "at a time not less than 7 days after seller has provided an invoice that accurately reflects "
+    "1) quantities delivered and accepted by buyer, and 2) per unit pricing established on this purchase "
+    "order to be accepted in writing by buyer.\n\n"
+    "Seller accepts that any returns in accordance with customer satisfaction/damaged goods relating to "
+    "product on this order will be passed from buyer to seller. Seller agrees to reimburse buyer for the "
+    "invoiced price of each returned item. Buyer will send seller a monthly returned product statement "
+    "when applicable.\n\n"
+    "No extra charges of any kind not included in this purchase order will be allowed. All applicable taxes "
+    "arising out of transactions contemplated by the order will be borne by seller."
+)
+
+
+@app.post("/api/generate-po")
+async def generate_po(body: dict):
+    """Generate a branded PO Excel file for a store + supplier combo."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    store = body.get("store", "")
+    supplier = body.get("supplier", "")
+    items = body.get("items", [])
+
+    if not store or not supplier or not items:
+        raise HTTPException(400, "store, supplier, and items required")
+
+    si = STORE_INFO.get(store, {
+        "full": f"Thrive Cannabis Marketplace - {store.upper()}",
+        "license": "RD329 / —",
+        "address": "Las Vegas, NV",
+        "code": store[:4].upper(),
+    })
+
+    today = datetime.now(timezone.utc).strftime("%m/%d/%Y")
+    today_short = datetime.now(timezone.utc).strftime("%m_%d_%y")
+    po_prefix = si.get("po_prefix", "TAPS")
+    seq_key = f"taps:po_seq:{po_prefix}"
+    seq = rdb.incr(seq_key) if rdb else int(time.time()) % 10000
+    po_num = f"{po_prefix}-{seq:05d}"
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Purchase Order"
+    ws.sheet_properties.pageSetUpPr = None
+
+    # Page setup
+    ws.page_setup.orientation = "portrait"
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.paperSize = 1  # Letter
+
+    # Column widths
+    ws.column_dimensions["A"].width = 12
+    ws.column_dimensions["B"].width = 48
+    ws.column_dimensions["C"].width = 10
+    ws.column_dimensions["D"].width = 14
+    ws.column_dimensions["E"].width = 16
+
+    # Styles
+    yellow_fill = PatternFill("solid", fgColor="FFFF00")
+    light_gray = PatternFill("solid", fgColor="F2F2F2")
+    white_fill = PatternFill("solid", fgColor="FFFFFF")
+    header_font = Font(name="Arial", size=24, bold=True)
+    label_font = Font(name="Arial", size=10, bold=True)
+    normal_font = Font(name="Arial", size=10)
+    small_font = Font(name="Arial", size=9)
+    money_fmt = '$#,##0.00'
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"),
+    )
+
+    row = 1
+
+    # ── HEADER ──
+    ws.merge_cells("A1:B3")
+    c = ws["A1"]
+    c.value = "THRIVE\nCannabis Marketplace"
+    c.font = Font(name="Arial", size=16, bold=True, color="006400")
+    c.alignment = Alignment(vertical="center", wrap_text=True)
+
+    ws.merge_cells("C1:E1")
+    ws["C1"].value = "PURCHASE ORDER"
+    ws["C1"].font = header_font
+    ws["C1"].alignment = Alignment(horizontal="right")
+
+    ws["D2"].value = "DATE"
+    ws["D2"].font = label_font
+    ws["D2"].alignment = Alignment(horizontal="right")
+    ws["E2"].value = today
+    ws["E2"].font = normal_font
+    ws["E2"].border = thin_border
+
+    ws["D3"].value = "PO #"
+    ws["D3"].font = label_font
+    ws["D3"].alignment = Alignment(horizontal="right")
+    ws["E3"].value = po_num
+    ws["E3"].font = normal_font
+    ws["E3"].border = thin_border
+
+    row = 5
+
+    # ── VENDOR / SHIP TO ──
+    ws.merge_cells(f"A{row}:B{row}")
+    ws[f"A{row}"].value = "VENDOR"
+    ws[f"A{row}"].font = label_font
+    ws[f"A{row}"].fill = yellow_fill
+    ws[f"A{row}"].border = thin_border
+    ws[f"B{row}"].border = thin_border
+
+    ws.merge_cells(f"C{row}:E{row}")
+    ws[f"C{row}"].value = "SHIP TO"
+    ws[f"C{row}"].font = label_font
+    ws[f"C{row}"].fill = yellow_fill
+    ws[f"C{row}"].border = thin_border
+    for col in ["D", "E"]:
+        ws[f"{col}{row}"].border = thin_border
+
+    row += 1
+    # Vendor info (left side)
+    ws.merge_cells(f"A{row}:B{row}")
+    ws[f"A{row}"].value = supplier
+    ws[f"A{row}"].font = Font(name="Arial", size=10, bold=True)
+
+    # Ship to info (right side)
+    ws.merge_cells(f"C{row}:E{row}")
+    ws[f"C{row}"].value = si["full"]
+    ws[f"C{row}"].font = normal_font
+
+    row += 1
+    ws.merge_cells(f"C{row}:E{row}")
+    ws[f"C{row}"].value = f"License # {si['license']}"
+    ws[f"C{row}"].font = small_font
+
+    row += 1
+    addr_lines = si["address"].split("\n")
+    for line in addr_lines:
+        ws.merge_cells(f"C{row}:E{row}")
+        ws[f"C{row}"].value = line
+        ws[f"C{row}"].font = small_font
+        row += 1
+
+    # Ship note (e.g. Jackpot ships to Cheyenne)
+    if si.get("ship_note"):
+        row += 1
+        for line in si["ship_note"].split("\n"):
+            ws.merge_cells(f"C{row}:E{row}")
+            ws[f"C{row}"].value = line
+            ws[f"C{row}"].font = Font(name="Arial", size=9, bold=True, color="FF0000") if "SHIPMENT" in line else small_font
+            row += 1
+
+    row += 1
+
+    # ── VENDOR REP ──
+    ws.merge_cells(f"A{row}:B{row}")
+    ws[f"A{row}"].value = "VENDOR REPRESENTATIVE"
+    ws[f"A{row}"].font = label_font
+    ws[f"A{row}"].fill = yellow_fill
+    ws[f"A{row}"].border = thin_border
+    ws[f"B{row}"].border = thin_border
+
+    ws[f"C{row}"].value = "TITLE"
+    ws[f"C{row}"].font = label_font
+    ws[f"C{row}"].fill = yellow_fill
+    ws[f"C{row}"].border = thin_border
+
+    ws.merge_cells(f"D{row}:E{row}")
+    ws[f"D{row}"].value = "SIGNATURE OF ACCEPTANCE"
+    ws[f"D{row}"].font = label_font
+    ws[f"D{row}"].fill = yellow_fill
+    ws[f"D{row}"].border = thin_border
+    ws[f"E{row}"].border = thin_border
+
+    row += 2
+
+    # ── LINE ITEMS HEADER ──
+    line_start = row
+    headers = ["ITEM #", "DESCRIPTION", "QTY", "UNIT PRICE", "TOTAL"]
+    for ci, h in enumerate(headers, 1):
+        cell = ws.cell(row=row, column=ci, value=h)
+        cell.font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="333333")
+        cell.border = thin_border
+        cell.alignment = Alignment(
+            horizontal="right" if ci >= 3 else "left",
+            vertical="center",
+        )
+
+    row += 1
+    data_start = row
+
+    # ── LINE ITEMS ──
+    for idx, item in enumerate(items, 1):
+        desc = item.get("description", item.get("product", ""))
+        qty = item.get("qty", 0)
+        unit_price = item.get("unit_price", item.get("uc", 0))
+
+        ws.cell(row=row, column=1, value=idx).font = small_font
+        ws.cell(row=row, column=1).border = thin_border
+        ws.cell(row=row, column=1).alignment = Alignment(horizontal="center")
+
+        ws.cell(row=row, column=2, value=desc).font = small_font
+        ws.cell(row=row, column=2).border = thin_border
+
+        ws.cell(row=row, column=3, value=qty).font = small_font
+        ws.cell(row=row, column=3).border = thin_border
+        ws.cell(row=row, column=3).alignment = Alignment(horizontal="right")
+
+        c_price = ws.cell(row=row, column=4, value=unit_price)
+        c_price.font = small_font
+        c_price.number_format = money_fmt
+        c_price.border = thin_border
+        c_price.alignment = Alignment(horizontal="right")
+
+        c_total = ws.cell(row=row, column=5)
+        c_total.value = f"=C{row}*D{row}"
+        c_total.font = small_font
+        c_total.number_format = money_fmt
+        c_total.border = thin_border
+        c_total.alignment = Alignment(horizontal="right")
+
+        # Alternate row shading
+        if idx % 2 == 0:
+            for ci in range(1, 6):
+                ws.cell(row=row, column=ci).fill = light_gray
+
+        row += 1
+
+    # Pad empty rows to match template look (min 30 line item rows)
+    empty_needed = max(0, 30 - len(items))
+    for _ in range(empty_needed):
+        for ci in range(1, 6):
+            c = ws.cell(row=row, column=ci)
+            c.border = thin_border
+            if ci == 5:
+                c.value = ""
+                c.number_format = money_fmt
+        row += 1
+
+    data_end = row - 1
+
+    row += 1
+    # ── TOTALS ──
+    for label, formula in [
+        ("SUBTOTAL", f"=SUM(E{data_start}:E{data_end})"),
+        ("SHIPPING", 0),
+        ("TOTAL", f"=E{row}+E{row+1}"),
+    ]:
+        ws.merge_cells(f"A{row}:D{row}")
+        ws[f"A{row}"].value = label
+        ws[f"A{row}"].font = Font(name="Arial", size=10, bold=True)
+        ws[f"A{row}"].alignment = Alignment(horizontal="right")
+        ws[f"A{row}"].border = thin_border
+        for ci in range(2, 5):
+            ws.cell(row=row, column=ci).border = thin_border
+
+        c = ws.cell(row=row, column=5)
+        c.value = formula
+        c.font = Font(name="Arial", size=10, bold=True)
+        c.number_format = money_fmt
+        c.border = thin_border
+        c.alignment = Alignment(horizontal="right")
+        row += 1
+
+    row += 1
+
+    # ── LEGAL ──
+    ws.merge_cells(f"A{row}:E{row}")
+    ws[f"A{row}"].value = "INVOICES, PAYMENT, AND TAXES"
+    ws[f"A{row}"].font = Font(name="Arial", size=9, bold=True, underline="single")
+
+    row += 1
+    ws.merge_cells(f"A{row}:E{row + 3}")
+    c = ws[f"A{row}"]
+    c.value = PO_LEGAL
+    c.font = Font(name="Arial", size=7)
+    c.alignment = Alignment(wrap_text=True, vertical="top")
+
+    # ── SAVE TO BUFFER ──
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"{po_num}_-_{si['code']}_PO_-_{today_short}.xlsx"
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ─── STARTUP ─────────────────────────────────────────────────────────────────
