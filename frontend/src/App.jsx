@@ -378,7 +378,7 @@ export default function TAPSApp() {
       else                 { b.grade = "D"; b.gradeColor = "#ef4444"; }
     });
 
-    const maxScore = ranked[0]?.powerScore || 1;
+    const maxPower = ranked[0]?.powerScore || 1;
 
     return (<>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10, marginBottom: 16 }}>
@@ -410,7 +410,7 @@ export default function TAPSApp() {
                 <td style={{ ...td, textAlign: "right" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
                     <div style={{ width: 60, height: 6, background: "#1a1a1a", borderRadius: 3, overflow: "hidden" }}>
-                      <div style={{ width: `${(b.powerScore / maxScore) * 100}%`, height: "100%", background: b.gradeColor, borderRadius: 3 }} />
+                      <div style={{ width: `${(b.powerScore / maxPower) * 100}%`, height: "100%", background: b.gradeColor, borderRadius: 3 }} />
                     </div>
                     <span style={{ color: b.gradeColor, fontWeight: 700 }}>{b.powerScore}</span>
                   </div>
