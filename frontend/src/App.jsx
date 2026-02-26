@@ -687,7 +687,7 @@ export default function TAPSApp() {
             {refreshing ? "Refreshing..." : "↻ Inventory"}
           </button>
           <button onClick={refreshSales} disabled={salesPulling} style={{ ...btnStyle, borderColor: "#f59e0b", color: "#f59e0b", whiteSpace: "nowrap" }}>
-            {salesPulling ? "Pulling Sales..." : "↻ Sales (slow)"}
+            {salesPulling ? "Pulling Sales..." : "↻ Sales"}
           </button>
           {S.inventory_ts && <span style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>
             Inv: {new Date(S.inventory_ts).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}
