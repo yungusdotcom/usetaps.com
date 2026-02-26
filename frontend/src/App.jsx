@@ -21,6 +21,7 @@ export default function TAPSApp() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [salesPulling, setSalesPulling] = useState(false);
+  const [salesProgress, setSalesProgress] = useState(null);
   const [tab, setTab] = useState(0);
   const [filters, setFilters] = useState({ s: "All", c: "All", cl: "All", b: "All", q: "" });
   const [sortStack, setSortStack] = useState([]);
@@ -53,20 +54,23 @@ export default function TAPSApp() {
   const refreshInventory = () => { setRefreshing(true); fetchTaps(true); };
   const refreshSales = async () => {
     setSalesPulling(true);
+    setSalesProgress(null);
     try {
       await fetch(`${API_BASE}/api/refresh-sales`, { method: "POST" });
       pollRef.current = setInterval(async () => {
         try {
           const r = await fetch(`${API_BASE}/api/sales-status`);
           const d = await r.json();
+          if (d.progress) setSalesProgress(d.progress);
           if (!d.rebuild_running) {
             clearInterval(pollRef.current);
             setSalesPulling(false);
+            setSalesProgress(null);
             fetchTaps();
           }
         } catch (e) {}
-      }, 5000);
-    } catch (e) { setSalesPulling(false); }
+      }, 3000);
+    } catch (e) { setSalesPulling(false); setSalesProgress(null); }
   };
 
   const handleSort = (ci) => {
@@ -721,8 +725,24 @@ export default function TAPSApp() {
             {refreshing ? "Refreshing..." : "↻ Inventory"}
           </button>
           <button onClick={refreshSales} disabled={salesPulling} style={{ ...btnStyle, borderColor: "#f59e0b", color: "#f59e0b", whiteSpace: "nowrap" }}>
-            {salesPulling ? "Pulling Sales..." : "↻ Sales"}
+            {salesPulling ? (salesProgress?.phase === "inventory" ? "Pulling Inventory..." :
+              salesProgress?.phase === "sales" ? `Sales ${salesProgress.done}/${salesProgress.total}` :
+              salesProgress?.phase === "finalizing" ? "Finalizing..." : "Starting...") : "↻ Sales"}
           </button>
+          {salesPulling && salesProgress?.phase === "sales" && salesProgress.total > 0 && (
+            <div style={{ width: 100, height: 6, background: "#1a1a1a", borderRadius: 3, overflow: "hidden" }}>
+              <div style={{
+                width: `${(salesProgress.done / salesProgress.total) * 100}%`,
+                height: "100%", background: "#f59e0b", borderRadius: 3,
+                transition: "width 0.5s ease",
+              }} />
+            </div>
+          )}
+          {salesPulling && salesProgress?.elapsed > 0 && (
+            <span style={{ fontSize: 9, color: "#f59e0b", fontFamily: "'JetBrains Mono', monospace" }}>
+              {salesProgress.elapsed}s
+            </span>
+          )}
           {S.inventory_ts && <span style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>
             Inv: {new Date(S.inventory_ts).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})}
           </span>}

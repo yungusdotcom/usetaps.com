@@ -501,16 +501,37 @@ def pull_sales_all(days: int = DAYS_DEFAULT, incremental: bool = True) -> tuple:
             set_cursor(loc_id, last_created)
         return store_clean, items
 
+    # Track progress in Redis
+    total_locs = len(locations)
+    if rdb:
+        rdb.set("taps:rebuild:progress", json.dumps({
+            "phase": "sales", "done": 0, "total": total_locs,
+            "stores_done": [], "started": time.time(),
+        }), ex=600)
+
     all_items = []
+    done_count = 0
     with ThreadPoolExecutor(max_workers=MAX_FETCH_WORKERS) as executor:
         futures = {executor.submit(pull_one, loc): loc for loc in locations}
         for future in as_completed(futures):
             try:
                 store_clean, items = future.result()
                 all_items.extend(items)
-                log.info(f"  ✓ {store_clean}: {len(items):,} line items")
+                done_count += 1
+                log.info(f"  ✓ {store_clean}: {len(items):,} line items ({done_count}/{total_locs})")
+                # Update progress
+                if rdb:
+                    prog = redis_get("taps:rebuild:progress") or {}
+                    stores_done = prog.get("stores_done", [])
+                    stores_done.append(store_clean)
+                    rdb.set("taps:rebuild:progress", json.dumps({
+                        "phase": "sales", "done": done_count, "total": total_locs,
+                        "stores_done": stores_done, "started": prog.get("started", time.time()),
+                        "elapsed": round(time.time() - prog.get("started", time.time())),
+                    }), ex=600)
             except Exception as e:
                 loc = futures[future]
+                done_count += 1
                 log.error(f"  ✗ {loc.get('_clean', '?')}: {e}")
 
     dt_fetch = time.monotonic() - t0
@@ -664,17 +685,34 @@ def do_rebuild(days: int = DAYS_DEFAULT, incremental: bool = True):
     t0 = time.monotonic()
     log.info(f"=== REBUILD START (days={days}, incremental={incremental}) ===")
 
+    # Phase 1: Inventory
+    if rdb:
+        rdb.set("taps:rebuild:progress", json.dumps({
+            "phase": "inventory", "done": 0, "total": 0,
+            "stores_done": [], "started": time.time(), "elapsed": 0,
+        }), ex=600)
+
     inventory = pull_inventory()
     if not inventory:
         log.error("Rebuild aborted: no inventory")
+        _clear_progress()
         return False
 
+    # Phase 2: Sales (progress tracked inside pull_sales_all)
     sales_agg, store_totals = pull_sales_all(days=days, incremental=incremental)
     if not sales_agg:
         log.warning("Rebuild: no sales data")
 
     t_p = time.monotonic()
     ts = datetime.now(timezone.utc).isoformat()
+
+    # Phase 3: Finalizing
+    if rdb:
+        rdb.set("taps:rebuild:progress", json.dumps({
+            "phase": "finalizing", "done": 0, "total": 0,
+            "stores_done": [], "started": time.time(), "elapsed": round(time.time() - t0),
+        }), ex=600)
+
     redis_set("taps:sales", sales_agg, ttl=SALES_CACHE_TTL)
     redis_set("taps:sales_store_totals", store_totals, ttl=SALES_CACHE_TTL)
     redis_set("taps:sales_meta", {"ts": ts, "last_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
@@ -687,7 +725,16 @@ def do_rebuild(days: int = DAYS_DEFAULT, incremental: bool = True):
 
     dt_total = time.monotonic() - t0
     log.info(f"=== REBUILD COMPLETE [{dt_total:.1f}s total] ===")
+    _clear_progress()
     return True
+
+
+def _clear_progress():
+    if rdb:
+        try:
+            rdb.delete("taps:rebuild:progress")
+        except Exception:
+            pass
 
 
 def _bg_rebuild_locked(days=DAYS_DEFAULT, incremental=True):
@@ -796,10 +843,12 @@ def get_inventory(background_tasks: BackgroundTasks):
 def sales_status():
     meta = redis_get("taps:sales_meta")
     lock_held = bool(rdb.get(LOCK_KEY)) if rdb else False
+    progress = redis_get("taps:rebuild:progress")
     return {"ts": meta.get("ts") if meta else None,
             "items": meta.get("count", 0) if meta else 0,
             "last_date": meta.get("last_date") if meta else None,
-            "rebuild_running": lock_held}
+            "rebuild_running": lock_held or progress is not None,
+            "progress": progress}
 
 
 @app.post("/api/refresh-sales")
