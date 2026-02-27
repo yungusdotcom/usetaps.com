@@ -906,6 +906,111 @@ export default function TAPSApp() {
         { l: "Margin", g: (r) => r.mgn > 0 ? pc(r.mgn) : "—", nm: 1, k: "mgn" },
         { l: "Inv Cost", g: (r) => $(r.ic), nm: 1, k: "ic" },
       ]} />
+
+      {/* ── DEAD SKU BREAKDOWN ── */}
+      {dead.length > 0 && (<>
+        <div style={{ marginTop: 20, background: "#111", border: "1px solid #ef444444", borderRadius: 8, padding: "16px 18px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#ef4444", fontFamily: "'JetBrains Mono', monospace" }}>
+                ✕ DEAD INVENTORY — {bv}
+              </span>
+              <span style={{ fontSize: 10, color: "#666", fontFamily: "'JetBrains Mono', monospace", marginLeft: 10 }}>
+                {dead.length} products · {N(dead.reduce((a, p) => a + p.oh, 0))} units · {$(deadCost)} trapped
+              </span>
+            </div>
+            <span style={{ fontSize: 9, color: "#555", fontFamily: "'JetBrains Mono', monospace" }}>
+              liquidate · transfer · deep discount
+            </span>
+          </div>
+
+          {/* Group dead by store */}
+          {(() => {
+            const deadByStore = {};
+            dead.forEach((p) => {
+              if (!deadByStore[p.s]) deadByStore[p.s] = [];
+              deadByStore[p.s].push(p);
+            });
+            const storeEntries = Object.entries(deadByStore).sort((a, b) => {
+              const aCost = a[1].reduce((x, p) => x + p.ic, 0);
+              const bCost = b[1].reduce((x, p) => x + p.ic, 0);
+              return bCost - aCost;
+            });
+
+            return storeEntries.map(([store, items]) => {
+              const storeCost = items.reduce((a, p) => a + p.ic, 0);
+              const storeUnits = items.reduce((a, p) => a + p.oh, 0);
+              return (
+                <div key={store} style={{ marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, paddingBottom: 4, borderBottom: "1px solid #222" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#e5e5e5", fontFamily: "'JetBrains Mono', monospace" }}>
+                      {store}
+                    </span>
+                    <div style={{ fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+                      <span style={{ color: "#ef4444", fontWeight: 700 }}>{$(storeCost)}</span>
+                      <span style={{ color: "#666", marginLeft: 8 }}>{items.length} items · {N(storeUnits)} units</span>
+                    </div>
+                  </div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <tbody>
+                      {items.sort((a, b) => b.ic - a.ic).map((p, pi) => (
+                        <tr key={pi} style={{ background: pi % 2 === 0 ? "transparent" : "#0a0a0a" }}>
+                          <td style={{ ...td, color: "#888", maxWidth: 320 }}>
+                            <span style={{ color: "#ef4444", marginRight: 6, fontSize: 8 }}>✕</span>{p.p}
+                          </td>
+                          <td style={{ ...td, color: "#666", width: 80 }}>{p.cat}</td>
+                          <td style={{ ...td, textAlign: "right", color: "#888", width: 60 }}>{p.oh}u</td>
+                          <td style={{ ...td, textAlign: "right", color: "#666", width: 70 }}>${p.uc.toFixed(2)}/ea</td>
+                          <td style={{ ...td, textAlign: "right", color: "#ef4444", fontWeight: 600, width: 80 }}>{$(p.ic)}</td>
+                          <td style={{ ...td, textAlign: "right", color: "#555", width: 100, fontSize: 9 }}>{p.sup || ""}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            });
+          })()}
+        </div>
+      </>)}
+
+      {/* ── OVERSTOCK BREAKDOWN ── */}
+      {overstock.length > 0 && (<>
+        <div style={{ marginTop: 12, background: "#111", border: "1px solid #f9731644", borderRadius: 8, padding: "16px 18px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "#f97316", fontFamily: "'JetBrains Mono', monospace" }}>
+                ▲ OVERSTOCK — {bv}
+              </span>
+              <span style={{ fontSize: 10, color: "#666", fontFamily: "'JetBrains Mono', monospace", marginLeft: 10 }}>
+                {overstock.length} products · {$(overCost)} excess inventory
+              </span>
+            </div>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>
+              {["Store", "Product", "Cat", "Vel/Wk", "On Hand", "Par", "Excess", "WOS", "Inv Cost"].map((h, i) => (
+                <th key={h} style={{ ...th, textAlign: i <= 2 ? "left" : "right", cursor: "default" }}>{h}</th>
+              ))}
+            </tr></thead>
+            <tbody>
+              {overstock.sort((a, b) => b.ic - a.ic).map((p, pi) => (
+                <tr key={pi} style={{ background: pi % 2 === 0 ? "transparent" : "#0a0a0a" }}>
+                  <td style={{ ...td }}>{p.s}</td>
+                  <td style={{ ...td, color: "#888", maxWidth: 280 }}>{p.p}</td>
+                  <td style={{ ...td, color: "#666" }}>{p.cat}</td>
+                  <td style={{ ...td, textAlign: "right", color: "#3b82f6" }}>{p.wv.toFixed(1)}</td>
+                  <td style={{ ...td, textAlign: "right" }}>{p.oh}</td>
+                  <td style={{ ...td, textAlign: "right", color: "#8b5cf6" }}>{p.par}</td>
+                  <td style={{ ...td, textAlign: "right", color: "#f97316", fontWeight: 600 }}>{Math.max(p.oh - p.par, 0)}</td>
+                  <td style={{ ...td, textAlign: "right", color: "#f97316", fontWeight: 600 }}>{p.wos?.toFixed(1) || "—"}</td>
+                  <td style={{ ...td, textAlign: "right", color: "#f97316" }}>{$(p.ic)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </>)}
     </>);
   };
 
