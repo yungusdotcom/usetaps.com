@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 
 const API_BASE = window.location.hostname === "localhost"
   ? "http://localhost:8000"
@@ -34,6 +34,8 @@ export default function TAPSApp() {
   const [poEdits, setPoEdits] = useState({}); // { product_key: qty_override }
   const [poExporting, setPoExporting] = useState(false);
   const [poWos, setPoWos] = useState(null); // null = use global wos
+  const [prFilter, setPrFilter] = useState(null); // null | "S" | "A" | "B" | "C" | "D" | "dead"
+  const [prExpanded, setPrExpanded] = useState(null); // expanded brand name for dead SKU detail
 
   const fetchTaps = useCallback(async (refreshInv = false) => {
     try {
@@ -74,7 +76,7 @@ export default function TAPSApp() {
     });
   };
 
-  const switchTab = (i) => { setTab(i); setSortStack([]); setFilters({ s: "All", c: "All", cl: "All", b: "All", q: "" }); };
+  const switchTab = (i) => { setTab(i); setSortStack([]); setFilters({ s: "All", c: "All", cl: "All", b: "All", q: "" }); setPrFilter(null); setPrExpanded(null); };
 
   if (loading) return (
     <div style={{ background: "#0a0a0a", color: "#22c55e", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'JetBrains Mono', monospace" }}>
@@ -496,13 +498,46 @@ export default function TAPSApp() {
 
     const maxPower = ranked[0]?.powerScore || 1;
 
+    // Clickable KPI card for Power Rankings
+    const PRKPI = ({ label, value, sub, color, filterKey }) => {
+      const active = prFilter === filterKey;
+      return (
+        <div onClick={() => setPrFilter(active ? null : filterKey)}
+          style={{
+            background: active ? color + "15" : "#111",
+            border: `1px solid ${active ? color : "#222"}`,
+            borderRadius: 6, padding: "12px 14px", cursor: "pointer", transition: "all .15s",
+          }}>
+          <div style={{ fontSize: 9, color: active ? color : "#666", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>{label}</div>
+          <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginTop: 2, color: color || "#e5e5e5" }}>{value}</div>
+          {sub && <div style={{ fontSize: 9, color: active ? color : "#666", fontFamily: "'JetBrains Mono', monospace", marginTop: 1 }}>{sub}</div>}
+          <div style={{ fontSize: 8, color: active ? color : "#444", fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>
+            {active ? "✕ click to clear" : "click to filter"}
+          </div>
+        </div>
+      );
+    };
+
+    // Apply filter
+    const filtered = prFilter === null ? ranked
+      : prFilter === "dead" ? ranked.filter((b) => b.dead > 0)
+      : ranked.filter((b) => b.grade === prFilter);
+
     return (<>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10, marginBottom: 16 }}>
-        <KPI label="Total Brands" value={ranked.length} color="#3b82f6" />
-        <KPI label="S-Tier" value={ranked.filter((b) => b.grade === "S").length} sub="Elite performers" color="#22c55e" />
-        <KPI label="D-Tier" value={ranked.filter((b) => b.grade === "D").length} sub="Underperformers" color="#ef4444" />
-        <KPI label="Dead SKU Brands" value={ranked.filter((b) => b.dead > 0).length} sub="Have zero-velocity SKUs" color="#f97316" />
+        <PRKPI label="Total Brands" value={ranked.length} color="#3b82f6" filterKey={null} />
+        <PRKPI label="S-Tier" value={ranked.filter((b) => b.grade === "S").length} sub="Elite performers" color="#22c55e" filterKey="S" />
+        <PRKPI label="A-Tier" value={ranked.filter((b) => b.grade === "A").length} sub="Strong contributors" color="#4ade80" filterKey="A" />
+        <PRKPI label="D-Tier" value={ranked.filter((b) => b.grade === "D").length} sub="Underperformers" color="#ef4444" filterKey="D" />
+        <PRKPI label="Dead SKU Brands" value={ranked.filter((b) => b.dead > 0).length} sub="Have zero-velocity SKUs" color="#f97316" filterKey="dead" />
       </div>
+
+      {prFilter && (
+        <div style={{ fontSize: 10, color: "#888", fontFamily: "'JetBrains Mono', monospace", marginBottom: 8 }}>
+          Showing <span style={{ color: "#e5e5e5", fontWeight: 700 }}>{filtered.length}</span> of {ranked.length} brands
+          {prFilter === "dead" && <span style={{ color: "#f97316" }}> — click a brand row to see dead SKUs</span>}
+        </div>
+      )}
 
       <div style={{ fontSize: 9, color: "#555", fontFamily: "'JetBrains Mono', monospace", marginBottom: 8 }}>
         Score = Revenue (35%) + Profit (30%) + Margin Quality (15%) + Momentum (10%) − Dead SKU Penalty (10%) · Graded by percentile
@@ -516,40 +551,70 @@ export default function TAPSApp() {
             ))}
           </tr></thead>
           <tbody>
-            {ranked.map((b, i) => (
-              <tr key={b.name} style={{ background: i % 2 === 0 ? "transparent" : "#0d0d0d" }}>
-                <td style={{ ...td, color: "#555", fontWeight: 700 }}>{i + 1}</td>
-                <td style={{ ...td }}>
-                  <span style={{ background: b.gradeColor + "22", color: b.gradeColor, padding: "2px 8px", borderRadius: 3, fontWeight: 800, fontSize: 11 }}>{b.grade}</span>
-                </td>
-                <td style={{ ...td, color: "#e5e5e5", fontWeight: 600, maxWidth: 200 }}>
-                  <span onClick={() => { setTab(2); setDiveView("brands"); setBrandView(b.name); setSortStack([]); }}
-                    style={{ cursor: "pointer", borderBottom: "1px dashed #555", transition: "all .15s" }}
-                    onMouseEnter={(e) => { e.target.style.color = "#22c55e"; e.target.style.borderColor = "#22c55e"; }}
-                    onMouseLeave={(e) => { e.target.style.color = "#e5e5e5"; e.target.style.borderColor = "#555"; }}
-                  >{b.name}</span>
-                </td>
-                <td style={{ ...td, textAlign: "right" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
-                    <div style={{ width: 60, height: 6, background: "#1a1a1a", borderRadius: 3, overflow: "hidden" }}>
-                      <div style={{ width: `${(b.powerScore / maxPower) * 100}%`, height: "100%", background: b.gradeColor, borderRadius: 3 }} />
+            {filtered.map((b, i) => {
+              const globalRank = ranked.indexOf(b) + 1;
+              const isExpanded = prExpanded === b.name;
+              const deadSkus = prFilter === "dead" ? cp.filter((p) => p.b === b.name && p.wv === 0) : [];
+              return (<React.Fragment key={b.name}>
+                <tr
+                  onClick={() => prFilter === "dead" && b.dead > 0 ? setPrExpanded(isExpanded ? null : b.name) : null}
+                  style={{
+                    background: isExpanded ? "#f9731611" : i % 2 === 0 ? "transparent" : "#0d0d0d",
+                    cursor: prFilter === "dead" && b.dead > 0 ? "pointer" : "default",
+                  }}>
+                  <td style={{ ...td, color: "#555", fontWeight: 700 }}>{globalRank}</td>
+                  <td style={{ ...td }}>
+                    <span style={{ background: b.gradeColor + "22", color: b.gradeColor, padding: "2px 8px", borderRadius: 3, fontWeight: 800, fontSize: 11 }}>{b.grade}</span>
+                  </td>
+                  <td style={{ ...td, color: "#e5e5e5", fontWeight: 600, maxWidth: 200 }}>
+                    <span onClick={(e) => { e.stopPropagation(); setTab(2); setDiveView("brands"); setBrandView(b.name); setSortStack([]); }}
+                      style={{ cursor: "pointer", borderBottom: "1px dashed #555", transition: "all .15s" }}
+                      onMouseEnter={(e) => { e.target.style.color = "#22c55e"; e.target.style.borderColor = "#22c55e"; }}
+                      onMouseLeave={(e) => { e.target.style.color = "#e5e5e5"; e.target.style.borderColor = "#555"; }}
+                    >{b.name}</span>
+                    {prFilter === "dead" && b.dead > 0 && (
+                      <span style={{ color: "#555", fontSize: 9, marginLeft: 6 }}>{isExpanded ? "▾" : "▸"}</span>
+                    )}
+                  </td>
+                  <td style={{ ...td, textAlign: "right" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                      <div style={{ width: 60, height: 6, background: "#1a1a1a", borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ width: `${(b.powerScore / maxPower) * 100}%`, height: "100%", background: b.gradeColor, borderRadius: 3 }} />
+                      </div>
+                      <span style={{ color: b.gradeColor, fontWeight: 700 }}>{b.powerScore}</span>
                     </div>
-                    <span style={{ color: b.gradeColor, fontWeight: 700 }}>{b.powerScore}</span>
-                  </div>
-                </td>
-                <td style={{ ...td, textAlign: "right", color: "#22c55e" }}>{$(b.rev)}</td>
-                <td style={{ ...td, textAlign: "right", color: b.profit > 0 ? "#4ade80" : "#ef4444" }}>{$(b.profit)}</td>
-                <td style={{ ...td, textAlign: "right", color: b.margin >= 55 ? "#22c55e" : b.margin >= 45 ? "#f59e0b" : "#ef4444" }}>{pc(b.margin)}</td>
-                <td style={{ ...td, textAlign: "right", color: "#888" }}>{pc(b.revShare)}</td>
-                <td style={{ ...td, textAlign: "right", color: "#3b82f6" }}>{b.vel.toFixed(1)}/wk</td>
-                <td style={{ ...td, textAlign: "right" }}>
-                  {b.momentum !== 0 ? <span style={{ color: b.momentum > 0 ? "#22c55e" : "#ef4444", fontWeight: 600 }}>{b.momentum > 0 ? "▲" : "▼"} {Math.abs(b.momentum)}%</span> : <span style={{ color: "#444" }}>—</span>}
-                </td>
-                <td style={{ ...td, textAlign: "right" }}>{$(b.inv)}</td>
-                <td style={{ ...td, textAlign: "right", color: "#888" }}>{b.skus}</td>
-                <td style={{ ...td, textAlign: "right", color: b.dead > 0 ? "#ef4444" : "#444" }}>{b.dead || "—"}</td>
-              </tr>
-            ))}
+                  </td>
+                  <td style={{ ...td, textAlign: "right", color: "#22c55e" }}>{$(b.rev)}</td>
+                  <td style={{ ...td, textAlign: "right", color: b.profit > 0 ? "#4ade80" : "#ef4444" }}>{$(b.profit)}</td>
+                  <td style={{ ...td, textAlign: "right", color: b.margin >= 55 ? "#22c55e" : b.margin >= 45 ? "#f59e0b" : "#ef4444" }}>{pc(b.margin)}</td>
+                  <td style={{ ...td, textAlign: "right", color: "#888" }}>{pc(b.revShare)}</td>
+                  <td style={{ ...td, textAlign: "right", color: "#3b82f6" }}>{b.vel.toFixed(1)}/wk</td>
+                  <td style={{ ...td, textAlign: "right" }}>
+                    {b.momentum !== 0 ? <span style={{ color: b.momentum > 0 ? "#22c55e" : "#ef4444", fontWeight: 600 }}>{b.momentum > 0 ? "▲" : "▼"} {Math.abs(b.momentum)}%</span> : <span style={{ color: "#444" }}>—</span>}
+                  </td>
+                  <td style={{ ...td, textAlign: "right" }}>{$(b.inv)}</td>
+                  <td style={{ ...td, textAlign: "right", color: "#888" }}>{b.skus}</td>
+                  <td style={{ ...td, textAlign: "right", color: b.dead > 0 ? "#ef4444" : "#444" }}>{b.dead || "—"}</td>
+                </tr>
+                {/* Expanded dead SKU detail rows */}
+                {isExpanded && deadSkus.map((p, pi) => (
+                  <tr key={`dead-${pi}`} style={{ background: "#0a0a0a" }}>
+                    <td style={{ ...td }} />
+                    <td style={{ ...td }} />
+                    <td colSpan={2} style={{ ...td, color: "#888", paddingLeft: 20, fontSize: 9 }}>
+                      <span style={{ color: "#ef4444", marginRight: 6 }}>✕</span>{p.p}
+                    </td>
+                    <td style={{ ...td, textAlign: "right", fontSize: 9, color: "#666" }}>{p.s}</td>
+                    <td style={{ ...td, textAlign: "right", fontSize: 9, color: "#666" }}>{p.cat}</td>
+                    <td colSpan={3} />
+                    <td style={{ ...td, textAlign: "right", fontSize: 9, color: "#ef4444" }}>{$(p.ic)}</td>
+                    <td style={{ ...td, textAlign: "right", fontSize: 9, color: "#666" }}>{p.oh}u</td>
+                    <td style={{ ...td, textAlign: "right", fontSize: 9, color: "#666" }}>${p.uc.toFixed(2)}</td>
+                    <td />
+                  </tr>
+                ))}
+              </React.Fragment>);
+            })}
           </tbody>
         </table>
       </div>
