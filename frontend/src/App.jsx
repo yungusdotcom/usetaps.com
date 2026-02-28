@@ -11,7 +11,7 @@ const pc = (n) => n.toFixed(1) + "%";
 const TABS = [
   { n: "Command Center", i: "◉" }, { n: "Inventory Health", i: "⚡" },
   { n: "Deep Dive", i: "◈" }, { n: "Power Rankings", i: "♛" },
-  { n: "Purchase Orders", i: "⬡" },
+  { n: "Purchase Orders", i: "⬡" }, { n: "Payment Terms", i: "⏱" },
 ];
 
 const CANNABIS_CATS = ["Flower", "Pre Rolls", "Concentrates", "Carts", "Disposables", "Edibles", "Infused Flower", "Capsules", "Tinctures", "Topicals"];
@@ -1414,6 +1414,177 @@ export default function TAPSApp() {
                   </div>
                 </div>
               )}
+            </div>
+          </>);
+        })()}
+
+        {/* Payment Terms Analyzer */}
+        {tab === 5 && (() => {
+          const brandTerms = {};
+          cp.forEach((p) => {
+            if (!p.b) return;
+            if (!brandTerms[p.b]) brandTerms[p.b] = {
+              totalDaysWeighted: 0, totalWeight: 0, rev: 0, cogs: 0, inv: 0,
+              skus: 0, vel: 0, oh: 0, stores: {},
+            };
+            const bt = brandTerms[p.b];
+            const daysOnShelf = p.wv > 0 ? (p.oh / p.wv) * 7 : (p.oh > 0 ? 999 : 0);
+            bt.totalDaysWeighted += daysOnShelf * p.ic;
+            bt.totalWeight += p.ic;
+            bt.rev += p.nr; bt.cogs += p.cogs; bt.inv += p.ic;
+            bt.skus++; bt.vel += p.wv; bt.oh += p.oh;
+            if (!bt.stores[p.s]) bt.stores[p.s] = { days: 0, weight: 0, oh: 0, vel: 0, inv: 0, skus: 0 };
+            const st = bt.stores[p.s];
+            st.days += daysOnShelf * p.ic; st.weight += p.ic;
+            st.oh += p.oh; st.vel += p.wv; st.inv += p.ic; st.skus++;
+          });
+
+          const roundTerms = (days) => {
+            if (days <= 0 || days > 900) return null;
+            return Math.round(days / 5) * 5 || 5;
+          };
+
+          const ptBrands = Object.entries(brandTerms)
+            .filter(([, d]) => d.totalWeight > 0 && d.rev > 0)
+            .map(([name, d]) => {
+              const avgDays = Math.round(d.totalDaysWeighted / d.totalWeight);
+              const suggested = roundTerms(avgDays);
+              const margin = d.rev > 0 ? (d.rev - d.cogs) / d.rev * 100 : 0;
+              const dailyCogs = d.cogs / 31;
+              const cashGap = avgDays > 30 ? Math.round((avgDays - 30) * dailyCogs) : 0;
+              const cashWin = avgDays < 30 ? Math.round((30 - avgDays) * dailyCogs) : 0;
+              const storeData = Object.entries(d.stores).map(([s, sd]) => ({
+                s, avgDays: sd.weight > 0 ? Math.round(sd.days / sd.weight) : 0,
+                oh: sd.oh, vel: sd.vel, inv: sd.inv, skus: sd.skus,
+              })).sort((a, b) => a.avgDays - b.avgDays);
+              return { name, avgDays, suggested, margin, cashGap, cashWin, rev: d.rev, cogs: d.cogs, inv: d.inv, skus: d.skus, vel: d.vel, oh: d.oh, storeData };
+            }).sort((a, b) => b.avgDays - a.avgDays);
+
+          const ptView = filters._termsView || "all";
+          const ptExp = filters._termsExpanded || null;
+          let ptFiltered = ptBrands;
+          if (ptView === "over30") ptFiltered = ptBrands.filter((b) => b.avgDays > 30);
+          else if (ptView === "under30") ptFiltered = ptBrands.filter((b) => b.avgDays <= 30);
+          else if (ptView === "risk") ptFiltered = ptBrands.filter((b) => b.avgDays > 45);
+
+          const totalCashGap = ptBrands.reduce((a, b) => a + b.cashGap, 0);
+          const totalCashWin = ptBrands.reduce((a, b) => a + b.cashWin, 0);
+          const avgDaysAll = ptBrands.length > 0 ? Math.round(ptBrands.reduce((a, b) => a + b.avgDays, 0) / ptBrands.length) : 0;
+
+          const TermKPI = ({ label, value, sub, color, fk }) => {
+            const active = ptView === fk && fk !== "all";
+            return (
+              <div onClick={() => fk !== "all" && setFilters((f) => ({ ...f, _termsView: active ? "all" : fk }))}
+                style={{
+                  background: active ? color + "15" : "#111", border: `1px solid ${active ? color : "#222"}`,
+                  borderRadius: 6, padding: "12px 14px", cursor: fk !== "all" ? "pointer" : "default", transition: "all .15s",
+                }}>
+                <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", textTransform: "uppercase", letterSpacing: 1 }}>{label}</div>
+                <div style={{ fontSize: 24, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginTop: 2, color }}>{value}</div>
+                {sub && <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", marginTop: 1 }}>{sub}</div>}
+                {fk !== "all" && <div style={{ fontSize: 8, color: active ? color : "#444", fontFamily: "'JetBrains Mono', monospace", marginTop: 3 }}>{active ? "✕ clear" : "click to filter"}</div>}
+              </div>
+            );
+          };
+
+          return (<>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 16 }}>
+              <TermKPI label="Avg Days on Shelf" value={avgDaysAll + "d"} sub="Across all brands" color="#3b82f6" fk="all" />
+              <TermKPI label="Over Net 30" value={ptBrands.filter((b) => b.avgDays > 30).length} sub="You're floating cash" color="#ef4444" fk="over30" />
+              <TermKPI label="Under Net 30" value={ptBrands.filter((b) => b.avgDays <= 30).length} sub="Healthy cash cycle" color="#22c55e" fk="under30" />
+              <TermKPI label="45+ Day Risk" value={ptBrands.filter((b) => b.avgDays > 45).length} sub="Push for extended terms" color="#f97316" fk="risk" />
+              <TermKPI label="Cash Gap (Net 30)" value={$(totalCashGap)} sub="Monthly float exposure" color="#ef4444" fk="all" />
+              <TermKPI label="Cash Advantage" value={$(totalCashWin)} sub="Fast-moving revenue" color="#22c55e" fk="all" />
+            </div>
+
+            <div style={{ fontSize: 9, color: "#555", fontFamily: "'JetBrains Mono', monospace", marginBottom: 8 }}>
+              Days on Shelf = On Hand ÷ Weekly Velocity × 7 · Weighted by inventory cost · Cash Gap = days beyond Net 30 × daily COGS
+              <span style={{ color: "#f97316", marginLeft: 8 }}>▶ Click a brand row for store-level breakdown</span>
+            </div>
+
+            <div style={{ overflowX: "auto", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr>
+                  {["Brand", "Avg Days", "Suggested Terms", "vs Net 30", "Revenue", "Margin", "Velocity", "On Hand", "Inventory", "Cash Impact"].map((h, i) => (
+                    <th key={h} style={{ ...th, textAlign: i === 0 ? "left" : "right", cursor: "default" }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {ptFiltered.map((b, i) => {
+                    const isExp = ptExp === b.name;
+                    const dayColor = b.avgDays <= 20 ? "#22c55e" : b.avgDays <= 30 ? "#4ade80" : b.avgDays <= 45 ? "#f59e0b" : "#ef4444";
+                    const delta = b.avgDays - 30;
+                    return (
+                      <React.Fragment key={b.name}>
+                        <tr onClick={() => setFilters((f) => ({ ...f, _termsExpanded: isExp ? null : b.name }))}
+                          style={{ background: isExp ? "#ffffff08" : i % 2 === 0 ? "transparent" : "#0d0d0d", cursor: "pointer" }}>
+                          <td style={{ ...td, color: "#e5e5e5", fontWeight: 600 }}>
+                            {b.name}<span style={{ color: "#555", fontSize: 9, marginLeft: 6 }}>{isExp ? "▾" : "▸"}</span>
+                          </td>
+                          <td style={{ ...td, textAlign: "right" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+                              <div style={{ width: 50, height: 6, background: "#1a1a1a", borderRadius: 3, overflow: "hidden" }}>
+                                <div style={{ width: `${Math.min((b.avgDays / 60) * 100, 100)}%`, height: "100%", background: dayColor, borderRadius: 3 }} />
+                              </div>
+                              <span style={{ color: dayColor, fontWeight: 700 }}>{b.avgDays}d</span>
+                            </div>
+                          </td>
+                          <td style={{ ...td, textAlign: "right" }}>
+                            {b.suggested ? <span style={{ background: dayColor + "22", color: dayColor, padding: "2px 8px", borderRadius: 3, fontWeight: 700, fontSize: 11 }}>Net {b.suggested}</span> : <span style={{ color: "#444" }}>—</span>}
+                          </td>
+                          <td style={{ ...td, textAlign: "right", color: delta > 0 ? "#ef4444" : "#22c55e", fontWeight: 600 }}>
+                            {delta > 0 ? `+${delta}d ⚠` : `${delta}d ✓`}
+                          </td>
+                          <td style={{ ...td, textAlign: "right", color: "#22c55e" }}>{$(b.rev)}</td>
+                          <td style={{ ...td, textAlign: "right", color: b.margin >= 50 ? "#22c55e" : b.margin >= 40 ? "#f59e0b" : "#ef4444" }}>{pc(b.margin)}</td>
+                          <td style={{ ...td, textAlign: "right", color: "#3b82f6" }}>{b.vel.toFixed(1)}/wk</td>
+                          <td style={{ ...td, textAlign: "right" }}>{N(b.oh)}</td>
+                          <td style={{ ...td, textAlign: "right" }}>{$(b.inv)}</td>
+                          <td style={{ ...td, textAlign: "right" }}>
+                            {b.cashGap > 0 ? <span style={{ color: "#ef4444", fontWeight: 600 }}>−{$(b.cashGap)}/mo</span>
+                            : b.cashWin > 0 ? <span style={{ color: "#22c55e", fontWeight: 600 }}>+{$(b.cashWin)}/mo</span>
+                            : <span style={{ color: "#666" }}>—</span>}
+                          </td>
+                        </tr>
+                        {isExp && (<>
+                          <tr style={{ background: "#0a0a0a" }}>
+                            <td colSpan={10} style={{ padding: "8px 12px 4px 20px" }}>
+                              <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", marginBottom: 4 }}>STORE BREAKDOWN — {b.name}</div>
+                            </td>
+                          </tr>
+                          {b.storeData.map((sd, si) => {
+                            const sc = sd.avgDays <= 20 ? "#22c55e" : sd.avgDays <= 30 ? "#4ade80" : sd.avgDays <= 45 ? "#f59e0b" : "#ef4444";
+                            const sT = roundTerms(sd.avgDays);
+                            return (
+                              <tr key={sd.s} style={{ background: si % 2 === 0 ? "#0a0a0a" : "#0d0d0d" }}>
+                                <td style={{ ...td, paddingLeft: 24, color: "#888", fontSize: 9 }}>{sd.s}</td>
+                                <td style={{ ...td, textAlign: "right" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
+                                    <div style={{ width: 36, height: 4, background: "#1a1a1a", borderRadius: 2, overflow: "hidden" }}>
+                                      <div style={{ width: `${Math.min((sd.avgDays / 60) * 100, 100)}%`, height: "100%", background: sc, borderRadius: 2 }} />
+                                    </div>
+                                    <span style={{ color: sc, fontWeight: 600, fontSize: 9 }}>{sd.avgDays}d</span>
+                                  </div>
+                                </td>
+                                <td style={{ ...td, textAlign: "right", fontSize: 9 }}>{sT ? <span style={{ color: sc }}>Net {sT}</span> : "—"}</td>
+                                <td style={{ ...td, textAlign: "right", fontSize: 9, color: sd.avgDays > 30 ? "#ef4444" : "#22c55e" }}>
+                                  {sd.avgDays > 30 ? `+${sd.avgDays - 30}d` : `${sd.avgDays - 30}d`}
+                                </td>
+                                <td colSpan={2} />
+                                <td style={{ ...td, textAlign: "right", color: "#3b82f6", fontSize: 9 }}>{sd.vel.toFixed(1)}/wk</td>
+                                <td style={{ ...td, textAlign: "right", fontSize: 9, color: "#888" }}>{sd.oh}u</td>
+                                <td style={{ ...td, textAlign: "right", fontSize: 9, color: "#888" }}>{$(sd.inv)}</td>
+                                <td />
+                              </tr>
+                            );
+                          })}
+                          <tr style={{ background: "#0a0a0a" }}><td colSpan={10} style={{ padding: 4 }} /></tr>
+                        </>)}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </>);
         })()}
