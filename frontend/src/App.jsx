@@ -1420,15 +1420,17 @@ export default function TAPSApp() {
 
         {/* Payment Terms Analyzer */}
         {tab === 5 && (() => {
+          const MAX_DAYS = 90; // Cap — beyond this it's a dead inventory problem, not a terms problem
           const brandTerms = {};
           cp.forEach((p) => {
             if (!p.b) return;
+            if (p.wv === 0) return; // Exclude dead SKUs — infinite shelf life skews averages
             if (!brandTerms[p.b]) brandTerms[p.b] = {
               totalDaysWeighted: 0, totalWeight: 0, rev: 0, cogs: 0, inv: 0,
-              skus: 0, vel: 0, oh: 0, stores: {},
+              skus: 0, deadSkus: 0, vel: 0, oh: 0, stores: {},
             };
             const bt = brandTerms[p.b];
-            const daysOnShelf = p.wv > 0 ? (p.oh / p.wv) * 7 : (p.oh > 0 ? 999 : 0);
+            const daysOnShelf = Math.min((p.oh / p.wv) * 7, MAX_DAYS); // Cap per-SKU
             bt.totalDaysWeighted += daysOnShelf * p.ic;
             bt.totalWeight += p.ic;
             bt.rev += p.nr; bt.cogs += p.cogs; bt.inv += p.ic;
@@ -1438,14 +1440,19 @@ export default function TAPSApp() {
             st.days += daysOnShelf * p.ic; st.weight += p.ic;
             st.oh += p.oh; st.vel += p.wv; st.inv += p.ic; st.skus++;
           });
+          // Count dead SKUs separately for context
+          cp.forEach((p) => {
+            if (!p.b || p.wv > 0) return;
+            if (brandTerms[p.b]) brandTerms[p.b].deadSkus = (brandTerms[p.b].deadSkus || 0) + 1;
+          });
 
           const roundTerms = (days) => {
-            if (days <= 0 || days > 900) return null;
+            if (days <= 0 || days > MAX_DAYS) return null;
             return Math.round(days / 5) * 5 || 5;
           };
 
           const ptBrands = Object.entries(brandTerms)
-            .filter(([, d]) => d.totalWeight > 0 && d.rev > 0)
+            .filter(([, d]) => d.totalWeight > 0 && d.vel >= 1) // Min 1 unit/wk brand velocity
             .map(([name, d]) => {
               const avgDays = Math.round(d.totalDaysWeighted / d.totalWeight);
               const suggested = roundTerms(avgDays);
@@ -1454,10 +1461,10 @@ export default function TAPSApp() {
               const cashGap = avgDays > 30 ? Math.round((avgDays - 30) * dailyCogs) : 0;
               const cashWin = avgDays < 30 ? Math.round((30 - avgDays) * dailyCogs) : 0;
               const storeData = Object.entries(d.stores).map(([s, sd]) => ({
-                s, avgDays: sd.weight > 0 ? Math.round(sd.days / sd.weight) : 0,
+                s, avgDays: sd.weight > 0 ? Math.min(Math.round(sd.days / sd.weight), MAX_DAYS) : 0,
                 oh: sd.oh, vel: sd.vel, inv: sd.inv, skus: sd.skus,
               })).sort((a, b) => a.avgDays - b.avgDays);
-              return { name, avgDays, suggested, margin, cashGap, cashWin, rev: d.rev, cogs: d.cogs, inv: d.inv, skus: d.skus, vel: d.vel, oh: d.oh, storeData };
+              return { name, avgDays, suggested, margin, cashGap, cashWin, rev: d.rev, cogs: d.cogs, inv: d.inv, skus: d.skus, deadSkus: d.deadSkus || 0, vel: d.vel, oh: d.oh, storeData };
             }).sort((a, b) => b.avgDays - a.avgDays);
 
           const ptView = filters._termsView || "all";
@@ -1498,21 +1505,21 @@ export default function TAPSApp() {
             </div>
 
             <div style={{ fontSize: 9, color: "#555", fontFamily: "'JetBrains Mono', monospace", marginBottom: 8 }}>
-              Days on Shelf = On Hand ÷ Weekly Velocity × 7 · Weighted by inventory cost · Cash Gap = days beyond Net 30 × daily COGS
+              Active SKUs only (dead excluded) · Capped at 90 days · Min 1 unit/wk brand velocity
               <span style={{ color: "#f97316", marginLeft: 8 }}>▶ Click a brand row for store-level breakdown</span>
             </div>
 
             <div style={{ overflowX: "auto", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr>
-                  {["Brand", "Avg Days", "Suggested Terms", "vs Net 30", "Revenue", "Margin", "Velocity", "On Hand", "Inventory", "Cash Impact"].map((h, i) => (
+                  {["Brand", "Avg Days", "Suggested Terms", "vs Net 30", "Revenue", "Margin", "Velocity", "On Hand", "Inventory", "Cash Impact", "Dead"].map((h, i) => (
                     <th key={h} style={{ ...th, textAlign: i === 0 ? "left" : "right", cursor: "default" }}>{h}</th>
                   ))}
                 </tr></thead>
                 <tbody>
                   {ptFiltered.map((b, i) => {
                     const isExp = ptExp === b.name;
-                    const dayColor = b.avgDays <= 20 ? "#22c55e" : b.avgDays <= 30 ? "#4ade80" : b.avgDays <= 45 ? "#f59e0b" : "#ef4444";
+                    const dayColor = b.avgDays <= 20 ? "#22c55e" : b.avgDays <= 30 ? "#4ade80" : b.avgDays <= 45 ? "#f59e0b" : b.avgDays <= 60 ? "#ef4444" : "#ef4444";
                     const delta = b.avgDays - 30;
                     return (
                       <React.Fragment key={b.name}>
@@ -1524,7 +1531,7 @@ export default function TAPSApp() {
                           <td style={{ ...td, textAlign: "right" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
                               <div style={{ width: 50, height: 6, background: "#1a1a1a", borderRadius: 3, overflow: "hidden" }}>
-                                <div style={{ width: `${Math.min((b.avgDays / 60) * 100, 100)}%`, height: "100%", background: dayColor, borderRadius: 3 }} />
+                                <div style={{ width: `${Math.min((b.avgDays / 90) * 100, 100)}%`, height: "100%", background: dayColor, borderRadius: 3 }} />
                               </div>
                               <span style={{ color: dayColor, fontWeight: 700 }}>{b.avgDays}d</span>
                             </div>
@@ -1545,10 +1552,11 @@ export default function TAPSApp() {
                             : b.cashWin > 0 ? <span style={{ color: "#22c55e", fontWeight: 600 }}>+{$(b.cashWin)}/mo</span>
                             : <span style={{ color: "#666" }}>—</span>}
                           </td>
+                          <td style={{ ...td, textAlign: "right", color: b.deadSkus > 0 ? "#ef4444" : "#444" }}>{b.deadSkus || "—"}</td>
                         </tr>
                         {isExp && (<>
                           <tr style={{ background: "#0a0a0a" }}>
-                            <td colSpan={10} style={{ padding: "8px 12px 4px 20px" }}>
+                            <td colSpan={11} style={{ padding: "8px 12px 4px 20px" }}>
                               <div style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace", marginBottom: 4 }}>STORE BREAKDOWN — {b.name}</div>
                             </td>
                           </tr>
@@ -1561,7 +1569,7 @@ export default function TAPSApp() {
                                 <td style={{ ...td, textAlign: "right" }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end" }}>
                                     <div style={{ width: 36, height: 4, background: "#1a1a1a", borderRadius: 2, overflow: "hidden" }}>
-                                      <div style={{ width: `${Math.min((sd.avgDays / 60) * 100, 100)}%`, height: "100%", background: sc, borderRadius: 2 }} />
+                                      <div style={{ width: `${Math.min((sd.avgDays / 90) * 100, 100)}%`, height: "100%", background: sc, borderRadius: 2 }} />
                                     </div>
                                     <span style={{ color: sc, fontWeight: 600, fontSize: 9 }}>{sd.avgDays}d</span>
                                   </div>
@@ -1578,7 +1586,7 @@ export default function TAPSApp() {
                               </tr>
                             );
                           })}
-                          <tr style={{ background: "#0a0a0a" }}><td colSpan={10} style={{ padding: 4 }} /></tr>
+                          <tr style={{ background: "#0a0a0a" }}><td colSpan={11} style={{ padding: 4 }} /></tr>
                         </>)}
                       </React.Fragment>
                     );
